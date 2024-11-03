@@ -6,11 +6,6 @@ struct UserDeletion {
     static func deleteUser(named user: String) {
         Logger.log("Initiating deletion process for user: '\(user)'")
         
-        if !userExists(user) {
-            Logger.log("User '\(user)' does not exist. Skipping deletion.")
-            return
-        }
-        
         // Attempt to delete using sysadminctl
         let sysadminOutput = runCommand("/usr/sbin/sysadminctl", arguments: ["-deleteUser", user, "-secure"])
         if sysadminOutput.contains("Securely removing") {
@@ -29,8 +24,32 @@ struct UserDeletion {
         Logger.log("------------------------------------------------------------")
     }
     
+    // Helper function to execute shell commands
+    private static func runCommand(_ path: String, arguments: [String]) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
+        
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        
+        do {
+            try process.run()
+        } catch {
+            Logger.log("Failed to execute command: \(path) \(arguments.joined(separator: " "))")
+            return ""
+        }
+        
+        process.waitUntilExit()
+        
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
     private static func userExists(_ user: String) -> Bool {
-        // Alternative logic to verify user existence without using `dscl`
+        // Implement alternative logic to verify user existence
         return false
     }
     
