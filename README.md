@@ -38,7 +38,7 @@ To build the **ManageUsers** Swift script, follow these steps:
    The compiled binary will be located at:
 
    ```
-   .build/release/ManageUsers
+   ./manageusers
    ```
 
 ## Usage
@@ -46,7 +46,7 @@ To build the **ManageUsers** Swift script, follow these steps:
 Run the application with `sudo` and specify the duration for inactivity.
 
 ```bash
-sudo .build/release/ManageUsers --duration [1|4]
+sudo ./manageusers --duration [1|4]
 ```
 
 ### Command-Line Flags
@@ -60,19 +60,19 @@ sudo .build/release/ManageUsers --duration [1|4]
 - **Delete users inactive for 1 week:**
 
   ```bash
-  sudo .build/release/ManageUsers --duration 1
+  sudo ./manageusers --duration 1
   ```
 
 - **Delete users inactive for 4 weeks:**
 
   ```bash
-  sudo .build/release/ManageUsers --duration 4
+  sudo ./manageusers --duration 4
   ```
 
 - **Attempting to run without specifying duration:**
 
   ```bash
-  sudo .build/release/ManageUsers
+  sudo ./manageusers
   ```
 
   **Expected Output:**
