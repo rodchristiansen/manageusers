@@ -10,9 +10,9 @@ enum Duration: Int {
     var timeInterval: TimeInterval {
         switch self {
         case .oneWeek:
-            return 7 * 24 * 60 * 60
+            return 7 * 24 * 60 * 60 // 1 week in seconds
         case .fourWeeks:
-            return 28 * 24 * 60 * 60
+            return 28 * 24 * 60 * 60 // 4 weeks in seconds
         }
     }
 }
@@ -26,6 +26,14 @@ do {
 }
 
 Logger.log("===== manageusers started =====")
+
+// Initialize Config by loading custom exclusions
+do {
+    try Config.initialize()
+} catch {
+    Logger.log("Failed to initialize configuration: \(error)")
+    exit(1)
+}
 
 // Parse Command-Line Arguments for Duration
 let arguments = CommandLine.arguments
@@ -50,10 +58,10 @@ guard let selectedDuration = duration else {
 Logger.log("Selected duration: \(selectedDuration.rawValue) week(s)")
 
 // Parse plist
-let plistPath = "/Library/Management/ca.ecuad.macadmin.UserSessions.plist"
+let plistPath = Config.userSessionsPlistPath
 let users: [User]
 do {
-    users = try Config.parsePlist(at: plistPath)
+    users = try Config.parseUsers(from: plistPath)
 } catch {
     Logger.log("Error parsing plist: \(error)")
     exit(1)
