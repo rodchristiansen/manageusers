@@ -99,9 +99,6 @@ for user in users {
     }
 }
 
-// Cleanup Orphaned Users
-CleanupOrphanedUsers.cleanup()
-
 // Flush Directory Services Cache
 FlushDSCache.flush()
 
