@@ -1,13 +1,25 @@
 #!/bin/bash
 set -e
 
+# Load environment variables from .env file if it exists
+if [[ -f ".env" ]]; then
+    echo "Loading configuration from .env file..."
+    # Use set -a to automatically export all variables
+    set -a
+    source .env
+    set +a
+else
+    echo "No .env file found, using environment variables or defaults..."
+fi
+
 # Build configuration for ManageUsers Swift binary
 PRODUCT_NAME="ManageUsers"
 BUILD_DIR="$(pwd)/.build"
-RELEASE_DIR="$(pwd)/release"
+RELEASE_DIR="${PKG_OUTPUT_PATH:-$(pwd)/release}"
 ENTITLEMENTS_FILE="$(pwd)/ManageUsers.entitlements"
-SIGNING_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
-TEAM_ID="${DEVELOPMENT_TEAM}"
+SIGNING_IDENTITY="${CODE_SIGN_IDENTITY:-}"
+KEYCHAIN="${KEYCHAIN_PATH:-}"
+BUILD_CONFIG="${BUILD_CONFIGURATION:-release}"
 
 echo "Building $PRODUCT_NAME..."
 
@@ -18,7 +30,7 @@ mkdir -p "$RELEASE_DIR"
 
 # Build the Swift package in release mode
 echo "Compiling Swift package..."
-swift build -c release --arch arm64 --arch x86_64
+swift build -c "$BUILD_CONFIG" --arch arm64 --arch x86_64
 
 # Check if binary was built
 BINARY_PATH="$BUILD_DIR/apple/Products/Release/ManageUsers"
@@ -40,12 +52,34 @@ cp "$BINARY_PATH" "$RELEASE_DIR/"
 if [[ -n "$SIGNING_IDENTITY" && "$SIGNING_IDENTITY" != "Developer ID Application" ]]; then
     echo "Signing binary with identity: $SIGNING_IDENTITY"
     
+    # Unlock keychain if specified
+    if [[ -n "$KEYCHAIN" ]]; then
+        echo "Using keychain: $KEYCHAIN"
+        # Expand environment variables in keychain path
+        EXPANDED_KEYCHAIN=$(eval echo "$KEYCHAIN")
+        if [[ -n "${KEYCHAIN_PASSWORD:-}" ]]; then
+            echo "Unlocking keychain with password..."
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$EXPANDED_KEYCHAIN"
+        else
+            echo "Attempting to unlock keychain (you may be prompted for password)..."
+            if ! security unlock-keychain "$EXPANDED_KEYCHAIN" 2>/dev/null; then
+                echo "Warning: Failed to unlock keychain automatically."
+                echo "Please ensure keychain is unlocked manually or set KEYCHAIN_PASSWORD in .env"
+                echo "Continuing with signing attempt..."
+            fi
+        fi
+        KEYCHAIN_ARGS="--keychain $EXPANDED_KEYCHAIN"
+    else
+        KEYCHAIN_ARGS=""
+    fi
+    
     # Sign with entitlements for full disk access
     codesign --force \
         --options runtime \
         --sign "$SIGNING_IDENTITY" \
         --entitlements "$ENTITLEMENTS_FILE" \
         --timestamp \
+        $KEYCHAIN_ARGS \
         "$RELEASE_DIR/$PRODUCT_NAME"
     
     echo "Binary signed successfully"
@@ -60,7 +94,7 @@ if [[ -n "$SIGNING_IDENTITY" && "$SIGNING_IDENTITY" != "Developer ID Application
     
 else
     echo "No signing identity provided - binary will not be signed"
-    echo "To sign, set CODE_SIGN_IDENTITY environment variable"
+    echo "To sign, configure CODE_SIGN_IDENTITY in .env file or environment variable"
 fi
 
 # Create installation package structure
