@@ -45,17 +45,42 @@ git clone https://github.com/rodchristiansen/manageusers.git
 cd manageusers
 ```
 
-2. Build the binary:
+2. Configure signing (optional but recommended):
+```bash
+# Copy the environment template
+cp .env.example .env
+
+# Edit .env file with your signing information
+# CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAM_ID)"
+# KEYCHAIN_PATH="${HOME}/Library/Keychains/signing.keychain"
+```
+
+3. Build the binary:
 ```bash
 ./build.sh
 ```
 
-3. For signed builds, set environment variables:
+The build script will automatically use the `.env` configuration if present, or fall back to environment variables.
+
+### Environment Configuration
+
+The project supports a `.env` file for configuration. Key settings include:
+
 ```bash
-export CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAM_ID)"
-export DEVELOPMENT_TEAM="YOUR_TEAM_ID"
-./build.sh
+# Code Signing (for distribution)
+CODE_SIGN_IDENTITY="Developer ID Application: Emily Carr University of Art and Design (7TF6CSP83S)"
+KEYCHAIN_PATH="${HOME}/Library/Keychains/signing.keychain"
+
+# Optional: Keychain password (use with caution)
+# KEYCHAIN_PASSWORD="your-keychain-password"
+
+# Build settings
+BUILD_CONFIGURATION="release"
+TARGET_ARCHITECTURES="x86_64,arm64"
+PKG_OUTPUT_PATH="./release"
 ```
+
+**Security Note**: The `.env` file is excluded from version control to protect sensitive signing information. Always use `.env.example` as a template.
 
 ## Usage
 

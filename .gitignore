@@ -8,6 +8,9 @@ DerivedData/
 # Release builds
 /release/
 
+# Environment configuration (contains sensitive signing info)
+.env
+
 # Xcode
 *.pbxuser
 !default.pbxuser
