@@ -1,6 +1,5 @@
 import Foundation
 import Logging
-import OSLog
 
 // MARK: - User Management Constants
 struct UserManagementConstants {
@@ -42,7 +41,7 @@ enum LogLevel: Int {
 // MARK: - User Manager Class
 class UserManager {
     private let config: UserDeletionConfig
-    private let logger: Logger
+    private let logger: Logging.Logger
     private let lockDir = "/var/run/ManageUsers.lock"
     private let logDir = "/Library/Management/Logs"
     private let logFile: String
@@ -54,7 +53,8 @@ class UserManager {
     
     init(config: UserDeletionConfig) {
         self.config = config
-        self.logger = Logger(label: "UserManager")
+        LoggingSystem.bootstrap(StreamLogHandler.standardOutput)
+        self.logger = Logging.Logger(label: "UserManager")
         self.logFile = "\(logDir)/ManageUsers.log"
     }
     
@@ -75,7 +75,7 @@ class UserManager {
         print("====================")
         
         // Setup logging
-        try setupLogging()
+        try await setupLogging()
         
         // Log startup
         await log(.info, "===== ManageUsers started =====")
@@ -97,7 +97,7 @@ class UserManager {
         defer { releaseLock() }
         
         // Load admin password
-        let adminPassword = try getAdminPassword()
+        let _ = try getAdminPassword()
         await log(.info, "Admin password loaded successfully.")
         
         // Load exclusions and policies
@@ -125,7 +125,7 @@ class UserManager {
         await log(.info, "===== ManageUsers completed =====")
     }
     
-    private func setupLogging() throws {
+    private func setupLogging() async throws {
         try FileManager.default.createDirectory(atPath: logDir, withIntermediateDirectories: true)
         
         if !FileManager.default.fileExists(atPath: logFile) {
@@ -367,7 +367,7 @@ class UserManager {
         for user in deferredUsers {
             if excludeList.contains(user) {
                 await log(.info, "Skipping deferred user '\(user)' (excluded).")
-                try clearDeferred(user: user)
+                try await clearDeferred(user: user)
                 continue
             }
             try await deleteUser(user)
@@ -405,7 +405,7 @@ class UserManager {
         return []
     }
     
-    private func clearDeferred(user: String) throws {
+    private func clearDeferred(user: String) async throws {
         // This is a simplified version - would need full implementation
         await log(.info, "Clearing deferred deletion for user: \(user)")
     }
@@ -514,7 +514,7 @@ class UserManager {
         
         if try await verifyDeletion(username) {
             await log(.info, "Deletion of '\(username)' verified.")
-            try clearDeferred(user: username)
+            try await clearDeferred(user: username)
         } else {
             await log(.error, "Deletion verification failed for '\(username)'.")
         }

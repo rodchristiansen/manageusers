@@ -1,25 +1,22 @@
 import ArgumentParser
 import Foundation
 import Logging
-import OSLog
 
-@main
-struct ManageUsers: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        abstract: "SharedDevice User Management Tool",
-        discussion: """
-        A comprehensive user management tool for shared macOS devices.
-        Handles user deletion, session tracking, and system maintenance
-        with support for simulation, force modes, and remediation tasks.
-        """,
-        version: "2.0.0",
-        subcommands: [
-            DeleteUsers.self,
-            UserSessions.self,
-            Remediation.self,
-        ],
-        defaultSubcommand: DeleteUsers.self
-    )
+// MARK: - Configuration Structures
+struct UserDeletionConfig {
+    let simulationMode: Bool
+    let forceMode: Bool 
+    let verboseLogging: Bool
+    let customDays: Int?
+    let customExclusionsPlist: String?
+    let customStrategy: String?
+}
+
+struct SessionTrackingConfig {
+    let verboseLogging: Bool
+    let sessionType: String
+    let outputPath: String?
+    let generateOnly: Bool
 }
 
 // MARK: - Delete Users Command
@@ -95,23 +92,6 @@ struct UserSessions: AsyncParsableCommand {
         let tracker = SessionTracker(config: config)
         try await tracker.run()
     }
-}
-
-// MARK: - Remediation Command
-struct Remediation: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "remediate",
-        abstract: "Run system remediation and maintenance tasks",
-        subcommands: [
-            CheckSecureToken.self,
-            CleanupOrphans.self,
-            CountUsers.self,
-            ListUsers.self,
-            DeleteAllUsers.self,
-            ManageXCreds.self,
-            FlushCache.self,
-        ]
-    )
 }
 
 // MARK: - Remediation Subcommands
@@ -241,19 +221,41 @@ struct FlushCache: AsyncParsableCommand {
     }
 }
 
-// MARK: - Configuration Structures
-struct UserDeletionConfig {
-    let simulationMode: Bool
-    let forceMode: Bool 
-    let verboseLogging: Bool
-    let customDays: Int?
-    let customExclusionsPlist: String?
-    let customStrategy: String?
+// MARK: - Remediation Command
+struct Remediation: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "remediate",
+        abstract: "Run system remediation and maintenance tasks",
+        subcommands: [
+            CheckSecureToken.self,
+            CleanupOrphans.self,
+            CountUsers.self,
+            ListUsers.self,
+            DeleteAllUsers.self,
+            ManageXCreds.self,
+            FlushCache.self,
+        ]
+    )
 }
 
-struct SessionTrackingConfig {
-    let verboseLogging: Bool
-    let sessionType: String
-    let outputPath: String?
-    let generateOnly: Bool
+// MARK: - Main Command  
+struct ManageUsers: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "SharedDevice User Management Tool",
+        discussion: """
+        A comprehensive user management tool for shared macOS devices.
+        Handles user deletion, session tracking, and system maintenance
+        with support for simulation, force modes, and remediation tasks.
+        """,
+        version: "2.0.0",
+        subcommands: [
+            DeleteUsers.self,
+            UserSessions.self,
+            Remediation.self,
+        ],
+        defaultSubcommand: DeleteUsers.self
+    )
 }
+
+// Entry point
+await ManageUsers.main()

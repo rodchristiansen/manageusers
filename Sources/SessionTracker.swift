@@ -1,6 +1,5 @@
 import Foundation
 import Logging
-import OSLog
 
 // MARK: - UTMPX Constants and Structures
 private let BOOT_TIME: Int16 = 2
@@ -110,7 +109,7 @@ struct SessionEvent {
 // MARK: - Session Tracker Class
 class SessionTracker {
     private let config: SessionTrackingConfig
-    private let logger: Logger
+    private let logger: Logging.Logger
     
     // Default exclusion list matching the Python script
     private let customExcludeUsers = [
@@ -119,7 +118,8 @@ class SessionTracker {
     
     init(config: SessionTrackingConfig) {
         self.config = config
-        self.logger = Logger(label: "SessionTracker")
+        LoggingSystem.bootstrap(StreamLogHandler.standardOutput)
+        self.logger = Logging.Logger(label: "SessionTracker")
     }
     
     func run() async throws {

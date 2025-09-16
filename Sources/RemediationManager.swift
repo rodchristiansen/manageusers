@@ -1,9 +1,9 @@
 import Foundation
-import OSLog
+import Logging
 
 class RemediationManager {
     private let verbose: Bool
-    private let logger: Logger
+    private let logger: Logging.Logger
     
     private let customExcludeUsers = [
         "admin", "student", "doc", "cts", "fvim", "fmsa", "nmsatech"
@@ -16,7 +16,8 @@ class RemediationManager {
     
     init(verbose: Bool) {
         self.verbose = verbose
-        self.logger = Logger(label: "RemediationManager")
+        LoggingSystem.bootstrap(StreamLogHandler.standardOutput)
+        self.logger = Logging.Logger(label: "RemediationManager")
     }
     
     // MARK: - SecureToken Management
