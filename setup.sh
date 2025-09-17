@@ -25,8 +25,8 @@ echo "1. Set CODE_SIGN_IDENTITY to your Developer ID Application"
 echo "2. Set KEYCHAIN_PATH to your signing keychain location" 
 echo "3. Optionally set KEYCHAIN_PASSWORD (or leave empty for manual unlock)"
 echo ""
-echo "Example Organisation example:"
-echo 'CODE_SIGN_IDENTITY="Developer ID Application: Example Organisation (TEAMID0000)"'
+echo "Example configuration:"
+echo 'CODE_SIGN_IDENTITY="Developer ID Application: Your Organization Name (TEAMID)"'
 echo 'KEYCHAIN_PATH="${HOME}/Library/Keychains/signing.keychain"'
 echo ""
 
