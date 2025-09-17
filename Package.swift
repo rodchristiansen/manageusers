@@ -10,8 +10,8 @@ let package = Package(
     ],
     products: [
         .executable(
-            name: "ManageUsers",
-            targets: ["ManageUsers"]
+            name: "manageusers",
+            targets: ["manageusers"]
         ),
     ],
     dependencies: [
@@ -20,7 +20,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "ManageUsers",
+            name: "manageusers",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Logging", package: "swift-log"),

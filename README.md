@@ -1,8 +1,6 @@
-# ManageUsers - SharedDevice User Management Tool
+# Mac User Management Tool
 
 A comprehensive **Swift 6.1+ native binary** for shared macOS device user management. This tool provides sophisticated user deletion policies, session tracking, and system remediation capabilities with full institutional code signing support.
-
-> **Complete Conversion**: Successfully converted from bash/Python scripts to modern Swift with enhanced performance, safety features, comprehensive error handling, and institutional-grade code signing.
 
 ## Features
 
@@ -26,9 +24,9 @@ A comprehensive **Swift 6.1+ native binary** for shared macOS device user manage
 
 **User Management Commands:**
 ```bash
-./ManageUsers delete --simulate --days 30 --verbose
-./ManageUsers sessions --output /tmp/sessions.plist
-./ManageUsers remediate cleanup-orphans --verbose
+./manageusers delete --simulate --days 30 --verbose
+./manageusers sessions --output /tmp/sessions.plist
+./manageusers remediate cleanup-orphans --verbose
 ```
 
 **Enhanced Remediation Tools:**
@@ -72,7 +70,7 @@ cp .env.example .env
 ./build.sh
 ```
 
-The signed binary will be available at `./release/ManageUsers`.
+The signed binary will be available at `./release/manageusers`.
 
 ## Installation
 
@@ -81,16 +79,16 @@ The signed binary will be available at `./release/ManageUsers`.
 The binary is designed for easy integration into Munki packages:
 
 1. Build the signed binary using `./build.sh`
-2. Copy `./release/ManageUsers` to your package payload
-3. Set executable permissions: `chmod +x ManageUsers` 
+2. Copy `./release/manageusers` to your package payload
+3. Set executable permissions: `chmod +x manageusers` 
 4. Configure Full Disk Access entitlements in your package
 
 ### Manual Installation
 
 ```bash
 # Copy binary to system path
-sudo cp ./release/ManageUsers /usr/local/bin/
-sudo chmod +x /usr/local/bin/ManageUsers
+sudo cp ./release/manageusers /usr/local/bin/
+sudo chmod +x /usr/local/bin/manageusers
 
 # Grant Full Disk Access via System Preferences > Privacy & Security
 ```
@@ -101,17 +99,17 @@ sudo chmod +x /usr/local/bin/ManageUsers
 
 ```bash
 # Simulate user deletions (safe mode)
-./ManageUsers delete --simulate --verbose
+./manageusers delete --simulate --verbose
 
 # Delete users inactive for 45 days
-./ManageUsers delete --days 45 --force
+./manageusers delete --days 45 --force
 
 # Use custom exclusions list
-./ManageUsers delete --exclusions-plist /path/to/exclusions.plist
+./manageusers delete --exclusions-plist /path/to/exclusions.plist
 
 # Deletion strategies
-./ManageUsers delete --strategy login-and-creation  # Default
-./ManageUsers delete --strategy creation-only       # Account age only
+./manageusers delete --strategy login-and-creation  # Default
+./manageusers delete --strategy creation-only       # Account age only
 ```
 
 **Available Flags:**
@@ -127,47 +125,47 @@ sudo chmod +x /usr/local/bin/ManageUsers
 
 ```bash
 # Track all session types
-./ManageUsers sessions --verbose
+./manageusers sessions --verbose
 
 # Track specific session types
-./ManageUsers sessions --session-type gui
-./ManageUsers sessions --session-type ssh  
-./ManageUsers sessions --session-type gui_ssh
+./manageusers sessions --session-type gui
+./manageusers sessions --session-type ssh  
+./manageusers sessions --session-type gui_ssh
 
 # Generate session data to custom location
-./ManageUsers sessions --output /tmp/user_sessions.plist
+./manageusers sessions --output /tmp/user_sessions.plist
 
 # Generate session data without user management
-./ManageUsers sessions --generate-only
+./manageusers sessions --generate-only
 ```
 
 ### System Remediation
 
 ```bash
 # Check SecureToken status for all users
-./ManageUsers remediate secure-token --verbose
+./manageusers remediate secure-token --verbose
 
 # Check specific user
-./ManageUsers remediate secure-token john.doe
+./manageusers remediate secure-token john.doe
 
 # Clean up orphaned user records
-./ManageUsers remediate cleanup-orphans --verbose
+./manageusers remediate cleanup-orphans --verbose
 
 # Count users and analyze discrepancies
-./ManageUsers remediate count
+./manageusers remediate count
 
 # List all users with properties
-./ManageUsers remediate list --verbose
+./manageusers remediate list --verbose
 
 # Emergency: Delete all non-excluded users (DANGEROUS)
-./ManageUsers remediate delete-all --simulate  # Test first!
-./ManageUsers remediate delete-all --force     # LIVE MODE
+./manageusers remediate delete-all --simulate  # Test first!
+./manageusers remediate delete-all --force     # LIVE MODE
 
 # Manage XCreds authentication
-./ManageUsers remediate xcreds --verbose
+./manageusers remediate xcreds --verbose
 
 # Flush directory services and system caches
-./ManageUsers remediate flush-cache
+./manageusers remediate flush-cache
 ```
 
 ## Enterprise Configuration
@@ -226,7 +224,7 @@ swift build -c release --arch x86_64 --arch arm64
 ### Project Structure
 
 ```
-ManageUsers/
+manageusers/
 ├── Package.swift              # Swift Package Manager manifest
 ├── Sources/
 │   ├── main.swift            # ArgumentParser CLI entry point
@@ -320,9 +318,9 @@ security list-keychains
 Enable verbose logging for detailed troubleshooting:
 
 ```bash
-./ManageUsers delete --verbose
-./ManageUsers sessions --verbose  
-./ManageUsers remediate secure-token --verbose
+./manageusers delete --verbose
+./manageusers sessions --verbose  
+./manageusers remediate secure-token --verbose
 ```
 
 ## Migration from Legacy Scripts
