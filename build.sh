@@ -12,8 +12,8 @@ else
     echo "No .env file found, using environment variables or defaults..."
 fi
 
-# Build configuration for ManageUsers Swift binary
-PRODUCT_NAME="ManageUsers"
+# Build configuration for manageusers Swift binary
+PRODUCT_NAME="manageusers"
 BUILD_DIR="$(pwd)/.build"
 RELEASE_DIR="${PKG_OUTPUT_PATH:-$(pwd)/release}"
 ENTITLEMENTS_FILE="$(pwd)/ManageUsers.entitlements"
@@ -33,9 +33,9 @@ echo "Compiling Swift package..."
 swift build -c "$BUILD_CONFIG" --arch arm64 --arch x86_64
 
 # Check if binary was built
-BINARY_PATH="$BUILD_DIR/apple/Products/Release/ManageUsers"
+BINARY_PATH="$BUILD_DIR/apple/Products/Release/manageusers"
 if [[ ! -f "$BINARY_PATH" ]]; then
-    BINARY_PATH="$BUILD_DIR/release/ManageUsers"
+    BINARY_PATH="$BUILD_DIR/release/manageusers"
 fi
 
 if [[ ! -f "$BINARY_PATH" ]]; then
