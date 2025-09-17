@@ -2,11 +2,11 @@
 
 A comprehensive **Swift 6.1+ native binary** for shared macOS device user management. This tool provides sophisticated user deletion policies, session tracking, and system remediation capabilities with full institutional code signing support.
 
-> **🎉 Complete Conversion**: Successfully converted from bash/Python scripts to modern Swift with enhanced performance, safety features, comprehensive error handling, and institutional-grade code signing.
+> **Complete Conversion**: Successfully converted from bash/Python scripts to modern Swift with enhanced performance, safety features, comprehensive error handling, and institutional-grade code signing.
 
-## 🚀 Features
+## Features
 
-### 🏗️ Complete Swift Project Structure
+### Complete Swift Project Structure
 
 - **Package.swift** - Modern Swift Package Manager configuration
 - **main.swift** - ArgumentParser CLI with all original flags and functionality  
@@ -15,23 +15,23 @@ A comprehensive **Swift 6.1+ native binary** for shared macOS device user manage
 - **RemediationManager.swift** - System maintenance and remediation tools
 - **ManageUsers.entitlements** - Full Disk Access permissions
 
-### 🔐 Institutional Code Signing Setup
+### Institutional Code Signing Setup
 
 - **.env configuration** - Secure Developer ID integration
 - **build.sh** - Automated compilation and signing with universal binary support
 - **setup.sh** - Development environment configuration
 - **Universal binary** - x86_64 and arm64 architecture support
 
-### ✅ All Original Features Preserved
+### All Original Features Preserved
 
-**📁 User Management Commands:**
+**User Management Commands:**
 ```bash
 ./ManageUsers delete --simulate --days 30 --verbose
 ./ManageUsers sessions --output /tmp/sessions.plist
 ./ManageUsers remediate cleanup-orphans --verbose
 ```
 
-**🛠️ Enhanced Remediation Tools:**
+**Enhanced Remediation Tools:**
 - `secure-token` - SecureToken status checking
 - `cleanup-orphans` - Orphaned user record cleanup  
 - `count` - User counting and analysis
@@ -40,14 +40,14 @@ A comprehensive **Swift 6.1+ native binary** for shared macOS device user manage
 - `xcreds` - XCreds authentication management
 - `flush-cache` - Directory services cache clearing
 
-## 📋 Requirements
+## Requirements
 
 - **macOS 12+** (Monterey or later)
 - **Swift 6.1+** for compilation
 - **Developer ID Application certificate** for code signing
 - **Full Disk Access** permissions for deployment
 
-## ⚡ Quick Start
+## Quick Start
 
 ### 1. Clone and Setup
 
@@ -74,7 +74,7 @@ cp .env.example .env
 
 The signed binary will be available at `./release/ManageUsers`.
 
-## 🔧 Installation
+## Installation
 
 ### Munki Package Integration
 
@@ -95,7 +95,7 @@ sudo chmod +x /usr/local/bin/ManageUsers
 # Grant Full Disk Access via System Preferences > Privacy & Security
 ```
 
-## 📖 Usage
+## Usage
 
 ### User Deletion Management
 
@@ -170,7 +170,7 @@ sudo chmod +x /usr/local/bin/ManageUsers
 ./ManageUsers remediate flush-cache
 ```
 
-## 🏢 Enterprise Configuration
+## Enterprise Configuration
 
 ### .env File Setup
 
@@ -205,7 +205,7 @@ security find-identity -v -p codesigning
 CODE_SIGN_IDENTITY="ABC123DEF456..." # From security output
 ```
 
-## 🏗️ Development
+## Development
 
 ### Building from Source
 
@@ -245,9 +245,9 @@ ManageUsers/
 - **[swift-argument-parser](https://github.com/apple/swift-argument-parser)** - Command-line argument parsing
 - **[swift-log](https://github.com/apple/swift-log)** - Structured logging
 
-## ✅ Production Ready
+## Production Ready
 
-### 🚀 Successfully Built & Signed
+### Successfully Built & Signed
 
 ```
 Binary Format: Mach-O universal (x86_64 arm64)
@@ -258,17 +258,17 @@ Runtime Version: macOS 12.0+
 Entitlements: Full Disk Access
 ```
 
-### 🎯 Ready for Deployment
+### Ready for Deployment
 
 Your binary is ready for:
 
-- ✅ **Munki package integration**
-- ✅ **Full Disk Access deployment** 
-- ✅ **Institutional code signing**
-- ✅ **macOS 12+ universal compatibility**
-- ✅ **Professional CLI interface with all original functionality**
+- **Munki package integration**
+- **Full Disk Access deployment** 
+- **Institutional code signing**
+- **macOS 12+ universal compatibility**
+- **Professional CLI interface with all original functionality**
 
-## 🔒 Security & Permissions
+## Security & Permissions
 
 ### Full Disk Access
 
@@ -287,7 +287,7 @@ The binary must be properly code signed with a Developer ID Application certific
 - Integrate with MDM deployment systems
 - Meet enterprise security requirements
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -325,7 +325,7 @@ Enable verbose logging for detailed troubleshooting:
 ./ManageUsers remediate secure-token --verbose
 ```
 
-## 📝 Migration from Legacy Scripts
+## Migration from Legacy Scripts
 
 This Swift binary is a complete replacement for:
 
@@ -334,19 +334,19 @@ This Swift binary is a complete replacement for:
 - Various remediation shell scripts
 
 **Migration Benefits:**
-- ✅ **Enhanced performance** - Native Swift execution
-- ✅ **Modern Swift safety features** - Memory safety and error handling
-- ✅ **Comprehensive error handling** - Detailed error reporting
-- ✅ **Institutional-grade code signing** - Enterprise deployment ready
-- ✅ **Universal binary support** - Intel and Apple Silicon compatible
-- ✅ **Structured logging** - Professional logging system
-- ✅ **Integrated remediation** - All tools in one binary
+- **Enhanced performance** - Native Swift execution
+- **Modern Swift safety features** - Memory safety and error handling
+- **Comprehensive error handling** - Detailed error reporting
+- **Institutional-grade code signing** - Enterprise deployment ready
+- **Universal binary support** - Intel and Apple Silicon compatible
+- **Structured logging** - Professional logging system
+- **Integrated remediation** - All tools in one binary
 
-## 📜 License
+## License
 
 This project is released under the MIT License. See LICENSE file for details.
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -356,7 +356,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Add tests if applicable  
 5. Submit a pull request
 
-## 📞 Support
+## Support
 
 For support and questions:
 
@@ -365,4 +365,4 @@ For support and questions:
 
 ---
 
-**The conversion from bash/Python scripts to this native Swift binary provides enhanced performance, modern Swift safety features, comprehensive error handling, and institutional-grade code signing - exactly what you requested!** 🚀
+**The conversion from bash/Python scripts to this native Swift binary provides enhanced performance, modern Swift safety features, comprehensive error handling, and institutional-grade code signing - exactly what you requested!**
