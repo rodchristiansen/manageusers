@@ -315,6 +315,8 @@ security list-keychains
 
 ### Logging
 
+Every run appends to `/Library/Managed Users/logs/manageusers.log` as `[yyyy-MM-dd HH:mm:ss] LEVEL  message` (local time; levels DEBUG, INFO, WARN, ERROR). The file rolls at 10 MB to `manageusers.log.1` through `manageusers.log.5`, newest first, and is never truncated on age. A log left at the previous location, `/Library/Management/Logs/ManageUsers.log`, is moved into the new directory on first run.
+
 Enable verbose logging for detailed troubleshooting:
 
 ```bash
