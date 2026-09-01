@@ -4,6 +4,7 @@ import Logging
 class RemediationManager {
     private let verbose: Bool
     private let logger: Logging.Logger
+    private let log = ManagementLog.shared
     
     private let customExcludeUsers = [
         "admin", "student", "doc", "cts", "fvim", "fmsa", "nmsatech"
@@ -63,7 +64,7 @@ class RemediationManager {
     
     // MARK: - User Cleanup
     func cleanupOrphans(type: String, simulate: Bool) async throws {
-        print("Starting orphan cleanup (type: \(type), simulate: \(simulate))...")
+        log.info("Starting orphan cleanup (type: \(type), simulate: \(simulate))...")
         
         switch type.lowercased() {
         case "dscl-orphans":
@@ -77,11 +78,11 @@ class RemediationManager {
             throw RemediationError.invalidCleanupType(type)
         }
         
-        print("Orphan cleanup completed.")
+        log.info("Orphan cleanup completed.")
     }
     
     private func cleanupDsclOrphans(simulate: Bool) async throws {
-        print("Cleaning up orphaned dscl records (users without home directories)...")
+        log.info("Cleaning up orphaned dscl records (users without home directories)...")
         
         let dsclUsers = try await getDsclUsers()
         var orphanCount = 0
@@ -91,28 +92,28 @@ class RemediationManager {
             if !FileManager.default.fileExists(atPath: homeDir) {
                 let allExcluded = alwaysExcludedUsers + customExcludeUsers
                 if !allExcluded.contains(user) {
-                    print("  Found orphaned user: \(user) (no home directory)")
+                    log.info("Found orphaned user: \(user) (no home directory)")
                     orphanCount += 1
                     
                     if !simulate {
                         try await deleteUserRecord(user)
-                        print("    → Deleted user record for \(user)")
+                        log.info("Deleted user record for \(user)")
                     } else {
-                        print("    → SIMULATION: Would delete user record for \(user)")
+                        log.info("SIMULATION: Would delete user record for \(user)")
                     }
                 }
             }
         }
         
         if orphanCount == 0 {
-            print("  No orphaned dscl records found.")
+            log.info("No orphaned dscl records found.")
         } else {
-            print("  Processed \(orphanCount) orphaned dscl records.")
+            log.info("Processed \(orphanCount) orphaned dscl records.")
         }
     }
     
     private func cleanupHomeOrphans(simulate: Bool) async throws {
-        print("Cleaning up orphaned home directories (directories without dscl records)...")
+        log.info("Cleaning up orphaned home directories (directories without dscl records)...")
         
         let homeDirectories = try FileManager.default.contentsOfDirectory(atPath: "/Users")
         let dsclUsers = try await getDsclUsers()
@@ -122,23 +123,23 @@ class RemediationManager {
             if !dsclUsers.contains(dir) {
                 let allExcluded = alwaysExcludedUsers + customExcludeUsers
                 if !allExcluded.contains(dir) {
-                    print("  Found orphaned home directory: /Users/\(dir)")
+                    log.info("Found orphaned home directory: /Users/\(dir)")
                     orphanCount += 1
                     
                     if !simulate {
                         try await removeDirectory("/Users/\(dir)")
-                        print("    → Removed directory /Users/\(dir)")
+                        log.info("Removed directory /Users/\(dir)")
                     } else {
-                        print("    → SIMULATION: Would remove directory /Users/\(dir)")
+                        log.info("SIMULATION: Would remove directory /Users/\(dir)")
                     }
                 }
             }
         }
         
         if orphanCount == 0 {
-            print("  No orphaned home directories found.")
+            log.info("No orphaned home directories found.")
         } else {
-            print("  Processed \(orphanCount) orphaned home directories.")
+            log.info("Processed \(orphanCount) orphaned home directories.")
         }
     }
     
@@ -282,19 +283,19 @@ class RemediationManager {
         
         for user in usersToDelete {
             if simulate {
-                print("SIMULATION: Would delete user: \(user)")
+                log.info("SIMULATION: Would delete user: \(user)")
             } else {
-                print("Deleting user: \(user)")
+                log.info("Deleting user: \(user)")
                 try await deleteUserWithPassword(user, adminPassword: adminPassword)
             }
         }
         
-        print("Delete all users operation completed.")
+        log.info("Delete all users operation completed.")
     }
     
     // MARK: - XCreds Management
     func manageXCreds(action: String) async throws {
-        print("Managing XCreds with action: \(action)")
+        log.info("Managing XCreds with action: \(action)")
         
         switch action.lowercased() {
         case "load":
@@ -311,7 +312,7 @@ class RemediationManager {
     }
     
     private func loadXCreds() async throws {
-        print("Loading XCreds launch agents...")
+        log.info("Loading XCreds launch agents...")
         let launchAgentPaths = [
             "/Library/LaunchAgents/com.twocanoes.xcreds.plist"
         ]
@@ -319,13 +320,13 @@ class RemediationManager {
         for path in launchAgentPaths {
             if FileManager.default.fileExists(atPath: path) {
                 try await runCommand(["/bin/launchctl", "load", path])
-                print("  Loaded: \(path)")
+                log.info("Loaded: \(path)")
             }
         }
     }
     
     private func unloadXCreds() async throws {
-        print("Unloading XCreds launch agents...")
+        log.info("Unloading XCreds launch agents...")
         let launchAgentPaths = [
             "/Library/LaunchAgents/com.twocanoes.xcreds.plist"
         ]
@@ -333,13 +334,13 @@ class RemediationManager {
         for path in launchAgentPaths {
             if FileManager.default.fileExists(atPath: path) {
                 try await runCommand(["/bin/launchctl", "unload", path])
-                print("  Unloaded: \(path)")
+                log.info("Unloaded: \(path)")
             }
         }
     }
     
     private func uninstallXCreds() async throws {
-        print("Uninstalling XCreds...")
+        log.info("Uninstalling XCreds...")
         
         // Unload first
         try await unloadXCreds()
@@ -353,11 +354,11 @@ class RemediationManager {
         for path in pathsToRemove {
             if FileManager.default.fileExists(atPath: path) {
                 try FileManager.default.removeItem(atPath: path)
-                print("  Removed: \(path)")
+                log.info("Removed: \(path)")
             }
         }
         
-        print("XCreds uninstalled.")
+        log.info("XCreds uninstalled.")
     }
     
     private func getXCredsStatus() async throws {
@@ -392,7 +393,7 @@ class RemediationManager {
     
     // MARK: - Directory Cache Management
     func flushDirectoryCache() async throws {
-        print("Flushing directory services cache...")
+        log.info("Flushing directory services cache...")
         
         let commands = [
             ["/usr/bin/dscacheutil", "-flushcache"],
@@ -407,10 +408,10 @@ class RemediationManager {
         let cacheDir = "/var/db/dslocal/nodes/Default/cache"
         if FileManager.default.fileExists(atPath: cacheDir) {
             try FileManager.default.removeItem(atPath: cacheDir)
-            print("  Removed cache directory: \(cacheDir)")
+            log.info("Removed cache directory: \(cacheDir)")
         }
         
-        print("Directory services cache flushed successfully.")
+        log.info("Directory services cache flushed successfully.")
     }
     
     // MARK: - Helper Methods
@@ -578,14 +579,14 @@ class RemediationManager {
         }
         
         if verbose {
-            print("  Running: \(command.joined(separator: " "))")
+            log.debug("Running: \(command.joined(separator: " "))")
         }
         
         try process.run()
         process.waitUntilExit()
         
         if verbose && process.terminationStatus != 0 {
-            print("  Command failed with exit code: \(process.terminationStatus)")
+            log.warning("Command failed with exit code: \(process.terminationStatus)")
         }
     }
 }

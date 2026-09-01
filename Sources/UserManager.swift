@@ -9,9 +9,7 @@ struct UserManagementConstants {
     static let thirtyDays = 30 * 24 * 60 * 60
     static let sixWeeks = 6 * 7 * 24 * 60 * 60
     static let thirteenWeeks = 13 * 7 * 24 * 60 * 60
-    
-    static let maxLogSize = 10_485_760  // 10MB in bytes
-    
+
     static let alwaysExcludedUsers = [
         "_mbsetupuser", "root", "daemon", "nobody", "sys", "guest",
         ".localized", "loginwindow", "Shared", "admin", "student",
@@ -31,54 +29,37 @@ struct DeletionPolicy {
     let forceTermDeletion: Bool
 }
 
-// MARK: - Log Levels
-enum LogLevel: Int {
-    case info = 1
-    case warning = 2  
-    case error = 3
-}
-
 // MARK: - User Manager Class
 class UserManager {
     private let config: UserDeletionConfig
     private let logger: Logging.Logger
     private let lockDir = "/var/run/ManageUsers.lock"
-    private let logDir = "/Library/Management/Logs"
-    private let logFile: String
+    private let managementLog = ManagementLog.shared
     private let userSessionsPlist = "/Library/Management/Cache/UserSessions.plist"
-    
+
     private var excludeList: [String] = []
     private var currentUsers: [String] = []
     private var policy: DeletionPolicy!
-    
+
     init(config: UserDeletionConfig) {
         self.config = config
         LoggingSystem.bootstrap(StreamLogHandler.standardOutput)
         self.logger = Logging.Logger(label: "UserManager")
-        self.logFile = "\(logDir)/ManageUsers.log"
     }
-    
+
     func run() async throws {
-        print("ManageUsers starting...")
-        print("Log file: \(logFile)")  
-        print("UserSessions plist: \(userSessionsPlist)")
-        
+        await log(.info, "===== ManageUsers started =====")
+        await log(.info, "Log file: \(managementLog.path)")
+        await log(.info, "UserSessions plist: \(userSessionsPlist)")
+
         // Check if plist exists
         guard FileManager.default.fileExists(atPath: userSessionsPlist) else {
-            print("ERROR: UserSessions plist not found at \(userSessionsPlist)")
-            print("Make sure user sessions have been tracked first.")
+            await log(.error, "UserSessions plist not found at \(userSessionsPlist)")
+            await log(.error, "Make sure user sessions have been tracked first.")
             throw UserManagerError.plistNotFound
         }
-        
-        print("UserSessions plist found ✓")
-        print("Starting execution...")
-        print("====================")
-        
-        // Setup logging
-        try await setupLogging()
-        
-        // Log startup
-        await log(.info, "===== ManageUsers started =====")
+
+        await log(.info, "UserSessions plist found")
         await log(.info, "Script invoked with simulation mode: \(config.simulationMode)")
         await log(.info, "Script invoked with force mode: \(config.forceMode)")
         
@@ -125,62 +106,11 @@ class UserManager {
         await log(.info, "===== ManageUsers completed =====")
     }
     
-    private func setupLogging() async throws {
-        try FileManager.default.createDirectory(atPath: logDir, withIntermediateDirectories: true)
-        
-        if !FileManager.default.fileExists(atPath: logFile) {
-            FileManager.default.createFile(atPath: logFile, contents: nil)
-        }
-        
-        // Truncate log if older than 24 hours
-        let attributes = try FileManager.default.attributesOfItem(atPath: logFile)
-        if let modificationDate = attributes[.modificationDate] as? Date {
-            let ageInSeconds = Date().timeIntervalSince(modificationDate)
-            if ageInSeconds > 86400 {  // 24 hours
-                try "".write(toFile: logFile, atomically: true, encoding: .utf8)
-                await log(.info, "Log file older than 24 hours. Truncated to capture only the latest run.")
-            }
-        }
-    }
-    
     private func log(_ level: LogLevel, _ message: String) async {
-        let timestamp = DateFormatter.logFormatter.string(from: Date())
-        let levelString = level.stringValue
-        let logMessage = "\(timestamp) [\(levelString)] - \(message)"
-        
-        // Write to log file
-        if let data = (logMessage + "\n").data(using: .utf8) {
-            if let fileHandle = FileHandle(forWritingAtPath: logFile) {
-                fileHandle.seekToEndOfFile()
-                fileHandle.write(data)
-                fileHandle.closeFile()
-            }
-        }
-        
-        // Also output to terminal
-        print(logMessage)
-        
-        // Check for log rotation
-        await checkLogRotation()
+        managementLog.write(level, message)
     }
-    
-    private func checkLogRotation() async {
-        let attributes = try? FileManager.default.attributesOfItem(atPath: logFile)
-        if let fileSize = attributes?[.size] as? Int64,
-           fileSize >= UserManagementConstants.maxLogSize {
-            let timestamp = DateFormatter.backupFormatter.string(from: Date())
-            let backupPath = "\(logFile).\(timestamp).bak"
-            
-            do {
-                try FileManager.default.moveItem(atPath: logFile, toPath: backupPath)
-                FileManager.default.createFile(atPath: logFile, contents: nil)
-                await log(.info, "Log file rotated due to size exceeding \(UserManagementConstants.maxLogSize) bytes.")
-            } catch {
-                print("Failed to rotate log file: \(error)")
-            }
-        }
-    }
-    
+
+
     private func acquireLock() throws {
         do {
             try FileManager.default.createDirectory(atPath: lockDir, withIntermediateDirectories: false)
@@ -599,31 +529,6 @@ class UserManager {
             try process.run()
             process.waitUntilExit()
             await log(.info, "Hidden users on login window updated.")
-        }
-    }
-}
-
-// MARK: - Extensions
-extension DateFormatter {
-    static let logFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter
-    }()
-    
-    static let backupFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMddHHmmss"
-        return formatter
-    }()
-}
-
-extension LogLevel {
-    var stringValue: String {
-        switch self {
-        case .info: return "INFO"
-        case .warning: return "WARNING"  
-        case .error: return "ERROR"
         }
     }
 }
