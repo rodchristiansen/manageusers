@@ -27,5 +27,10 @@ let package = Package(
             ],
             path: "Sources"
         ),
+        .testTarget(
+            name: "ManageUsersTests",
+            dependencies: ["manageusers"],
+            path: "Tests/ManageUsersTests"
+        ),
     ]
 )
