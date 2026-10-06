@@ -83,12 +83,24 @@ The binary is designed for easy integration into Munki packages:
 3. Set executable permissions: `chmod +x manageusers` 
 4. Configure Full Disk Access entitlements in your package
 
+### Install layout
+
+manageusers has its own folder, as outset has `/usr/local/outset`:
+
+| Path | What |
+|---|---|
+| `/usr/local/manageusers/manageusers` | The tool |
+| `/usr/local/bin/manageusers` | Symlink to it, for the PATH |
+| `/Library/Managed Users/logs` | Day logs |
+
+`packaging/build-pkg.sh <version> <output-dir> [installer identity]` builds the package. Its preinstall removes the 2.x layout: a plain binary at `/usr/local/bin/manageusers`, and the `/Library/Management/Scripts/ManageUsers.sh` symlink, removed only when it points at that binary so the legacy bash script at the same path is never touched.
+
 ### Manual Installation
 
 ```bash
-# Copy binary to system path
-sudo cp ./release/manageusers /usr/local/bin/
-sudo chmod +x /usr/local/bin/manageusers
+sudo mkdir -p /usr/local/manageusers
+sudo install -o root -g wheel -m 755 ./release/manageusers /usr/local/manageusers/manageusers
+sudo ln -sf /usr/local/manageusers/manageusers /usr/local/bin/manageusers
 
 # Grant Full Disk Access via System Preferences > Privacy & Security
 ```

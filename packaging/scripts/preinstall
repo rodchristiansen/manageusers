@@ -1,0 +1,17 @@
+#!/bin/zsh --no-rcs
+# The 2.x package installed the binary at /usr/local/bin/manageusers and a
+# symlink at /Library/Management/Scripts/ManageUsers.sh, the path of the legacy
+# bash script. The binary now lives in /usr/local/manageusers with a symlink in
+# /usr/local/bin. Clear the old file so the symlink can take its place, and
+# remove the old ManageUsers.sh only when it is that symlink, never the script.
+TARGET="${3%/}"
+OLD_BIN="${TARGET}/usr/local/bin/manageusers"
+OLD_LINK="${TARGET}/Library/Management/Scripts/ManageUsers.sh"
+
+if [[ -f "${OLD_BIN}" && ! -L "${OLD_BIN}" ]]; then
+    /bin/rm -f "${OLD_BIN}"
+fi
+if [[ -L "${OLD_LINK}" && "$(/usr/bin/readlink "${OLD_LINK}")" == "/usr/local/bin/manageusers" ]]; then
+    /bin/rm -f "${OLD_LINK}"
+fi
+exit 0

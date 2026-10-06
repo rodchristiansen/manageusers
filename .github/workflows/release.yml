@@ -19,24 +19,12 @@ jobs:
         id: ver
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Build universal binary
-        run: swift build -c release --product manageusers --arch arm64 --arch x86_64
-
       - name: Build unsigned package
         env:
           VERSION: ${{ steps.ver.outputs.VERSION }}
         run: |
           set -euo pipefail
-          root="$PWD/pkg/root"
-          rm -rf "$root" artifacts && mkdir -p "$root/usr/local/bin" "$root/Library/Management/Scripts" artifacts
-          cp .build/apple/Products/Release/manageusers "$root/usr/local/bin/manageusers"
-          chmod 755 "$root/usr/local/bin/manageusers"
-          ln -s /usr/local/bin/manageusers "$root/Library/Management/Scripts/ManageUsers.sh"
-          pkgbuild --root "$root" --identifier com.github.rodchristiansen.manageusers --version "$VERSION" \
-            --install-location / "artifacts/ManageUsers-component.pkg"
-          productbuild --package "artifacts/ManageUsers-component.pkg" --identifier com.github.rodchristiansen.manageusers \
-            --version "$VERSION" "artifacts/ManageUsers-${VERSION}.pkg"
-          rm -f artifacts/ManageUsers-component.pkg
+          packaging/build-pkg.sh "$VERSION" artifacts
           shasum -a 256 "artifacts/ManageUsers-${VERSION}.pkg" > "artifacts/ManageUsers-${VERSION}.pkg.sha256"
 
       - name: Publish release
