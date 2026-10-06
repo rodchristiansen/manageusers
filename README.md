@@ -121,6 +121,22 @@ sudo chmod +x /usr/local/bin/manageusers
 - `--exclusions-plist <path>` - Path to custom exclusions plist
 - `--strategy <strategy>` - Deletion strategy selection
 
+### Settings
+
+Machine settings live in the `com.github.manageusers` preference domain. A key forced by a
+configuration profile wins over `/Library/Preferences/com.github.manageusers.plist`, and a
+`--days` or `--strategy` flag given for one run wins over both.
+
+| Key | Type | Effect |
+|---|---|---|
+| `DeletionDays` | integer | Inactivity threshold in days, replacing the area-derived one |
+| `DeletionStrategy` | string | `login-and-creation` or `creation-only` |
+| `AdditionalExclusions` | array of strings | Accounts never deleted, on top of the built-in list |
+
+The Remote Desktop area and room fields (`Text2`, `Text3`) are read through CFPreferences, so a
+profile that sets them counts too. The session plist that drives deletions is used only when it is
+owned by root and writable by no other account.
+
 ### Session Tracking
 
 ```bash

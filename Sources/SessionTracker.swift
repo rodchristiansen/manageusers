@@ -108,6 +108,8 @@ struct SessionEvent {
 
 // MARK: - Session Tracker Class
 class SessionTracker {
+    static let defaultOutputPath = "/Library/Management/Cache/UserSessions.plist"
+
     private let config: SessionTrackingConfig
     private let logger: Logging.Logger
     
@@ -155,7 +157,7 @@ class SessionTracker {
             "Exclusions": customExcludeUsers
         ]
         
-        let outputPath = config.outputPath ?? "/Library/Management/Cache/UserSessions.plist"
+        let outputPath = config.outputPath ?? Self.defaultOutputPath
         try await writePlist(data: combinedData, to: outputPath)
         
         logger.info("Successfully wrote combined plist to \(outputPath)")
@@ -385,9 +387,23 @@ class SessionTracker {
         
         // Create directory if needed
         let directory = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        
         let plistData = try PropertyListSerialization.data(fromPropertyList: data, format: .xml, options: 0)
-        try plistData.write(to: url)
+
+        // The default plist steers deletions, so its folder is made root-only and the
+        // file is written fresh, never through a link. A custom --output path is the
+        // caller's own and is written as given.
+        guard path == Self.defaultOutputPath else {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try plistData.write(to: url)
+            return
+        }
+        guard FileTrust.secureDirectory(directory.path) else {
+            throw SessionTrackerError.untrustedOutputDirectory(directory.path)
+        }
+        try FileTrust.writeNewFile(plistData, to: path)
     }
+}
+
+enum SessionTrackerError: Error {
+    case untrustedOutputDirectory(String)
 }

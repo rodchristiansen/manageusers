@@ -40,9 +40,11 @@ class UserManager {
     private var excludeList: [String] = []
     private var currentUsers: [String] = []
     private var policy: DeletionPolicy!
+    private let preferences: ManageUsersPreferences
 
-    init(config: UserDeletionConfig) {
+    init(config: UserDeletionConfig, preferences: ManageUsersPreferences = .system) {
         self.config = config
+        self.preferences = preferences
         LoggingSystem.bootstrap(StreamLogHandler.standardOutput)
         self.logger = Logging.Logger(label: "UserManager")
     }
@@ -57,6 +59,13 @@ class UserManager {
             await log(.error, "UserSessions plist not found at \(userSessionsPlist)")
             await log(.error, "Make sure user sessions have been tracked first.")
             throw UserManagerError.plistNotFound
+        }
+
+        // The plist decides who is excluded from deletion, so act on it only when
+        // root alone could have written it.
+        guard FileTrust.isTrustedFile(userSessionsPlist) else {
+            await log(.error, "UserSessions plist at \(userSessionsPlist) is not owned by root or is writable by another account; refusing to use it.")
+            throw UserManagerError.untrustedSessionsPlist
         }
 
         await log(.info, "UserSessions plist found")
@@ -161,7 +170,11 @@ class UserManager {
         }
         
         // Combine with always excluded users
-        excludeList = Array(Set(exclusions + UserManagementConstants.alwaysExcludedUsers))
+        let configured = preferences.additionalExclusions()
+        excludeList = Array(Set(exclusions + configured + UserManagementConstants.alwaysExcludedUsers))
+        if !configured.isEmpty {
+            await log(.info, "Added configured exclusions: \(configured)")
+        }
         
         // Add currently logged-in user
         if let loggedInUser = getCurrentConsoleUser() {
@@ -241,27 +254,25 @@ class UserManager {
             }
         }
         
+        // A --days or --strategy flag for this run, else a configured setting
+        // (a profile-forced value first), replaces the area-derived value.
+        if let days = preferences.deletionDays(flag: config.customDays) {
+            duration = days * 24 * 60 * 60
+            forceTermDeletion = false
+            await log(.info, "Using configured deletion threshold of \(days) days.")
+        }
+        if let configuredStrategy = preferences.deletionStrategy(flag: config.customStrategy) {
+            strategy = configuredStrategy
+            await log(.info, "Using configured deletion strategy \(configuredStrategy).")
+        }
+
         policy = DeletionPolicy(duration: duration, strategy: strategy, forceTermDeletion: forceTermDeletion)
     }
     
     private func getRemoteDesktopSetting(_ key: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["read", "/Library/Preferences/com.apple.RemoteDesktop", key]
-        
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        
-        try? process.run()
-        process.waitUntilExit()
-        
-        if process.terminationStatus == 0 {
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        
-        return nil
+        // Through CFPreferences rather than the plist on disk, so a value set by a
+        // configuration profile counts as well.
+        managedStringPreference(key, domain: "com.apple.RemoteDesktop")
     }
     
     private func isEndOfTerm() -> Bool {
@@ -541,4 +552,5 @@ enum UserManagerError: Error {
     case adminPasswordDecodeError
     case exclusionsNotFound
     case userDataNotFound
+    case untrustedSessionsPlist
 }
