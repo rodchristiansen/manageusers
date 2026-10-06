@@ -40,6 +40,12 @@ class UserManager {
     private var excludeList: [String] = []
     private var currentUsers: [String] = []
     private var policy: DeletionPolicy!
+    private var protection = AccountProtection(exclusions: [])
+    private let inspector = AccountInspector()
+    private var volumeUsers: [AccountInspector.VolumeUser] = []
+    private var adminVolumeOwners: Set<String> = []
+    private var deletedCount = 0
+    private var failedCount = 0
     private let preferences: ManageUsersPreferences
 
     init(config: UserDeletionConfig, preferences: ManageUsersPreferences = .system) {
@@ -86,12 +92,9 @@ class UserManager {
         try acquireLock()
         defer { releaseLock() }
         
-        // Load admin password
-        let _ = try getAdminPassword()
-        await log(.info, "Admin password loaded successfully.")
-        
-        // Load exclusions and policies
+        // Load exclusions, admin protection and policies
         try await loadExclusions()
+        loadProtection()
         try await calculateDeletionPolicies()
         
         // Process deferred deletions
@@ -112,7 +115,9 @@ class UserManager {
         // Update hidden users
         try await updateHiddenUsers()
         
+        await log(.info, "Run summary: \(deletedCount) deleted, \(failedCount) failed\(config.simulationMode ? " (simulation)" : "").")
         await log(.info, "===== ManageUsers completed =====")
+        if failedCount > 0 { throw UserManagerError.deletionsFailed(failedCount) }
     }
     
     private func log(_ level: LogLevel, _ message: String) async {
@@ -130,32 +135,6 @@ class UserManager {
     
     private func releaseLock() {
         try? FileManager.default.removeItem(atPath: lockDir)
-    }
-    
-    private func getAdminPassword() throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["read", "ManagedInstalls", "SecureTokenAdmin"]
-        
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        
-        try process.run()
-        process.waitUntilExit()
-        
-        guard process.terminationStatus == 0 else {
-            throw UserManagerError.adminPasswordNotFound
-        }
-        
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let base64String = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              let decodedData = Data(base64Encoded: base64String),
-              let password = String(data: decodedData, encoding: .utf8) else {
-            throw UserManagerError.adminPasswordDecodeError
-        }
-        
-        return password
     }
     
     private func loadExclusions() async throws {
@@ -189,6 +168,35 @@ class UserManager {
         
         await log(.info, "Final exclusion list: \(excludeList)")
     }
+
+    private func loadProtection() {
+        let settings = AdminGuardSettings.load()
+        protection = AccountProtection(
+            exclusions: excludeList,
+            deleteAdmins: settings.deleteAdmins,
+            deletableAdmins: settings.deletableAdmins.filter { name in
+                !excludeList.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+            }
+        )
+        volumeUsers = inspector.volumeUsers()
+        adminVolumeOwners = inspector.adminVolumeOwners(volumeUsers: volumeUsers)
+        if settings.deleteAdmins {
+            managementLog.write(.warning, "Admin protection is OFF (DeleteAdmins is true): admin accounts may be deleted")
+        } else {
+            managementLog.write(.info, "Admin protection is on: members of the admin group are never deleted")
+            if !protection.deletableAdmins.isEmpty {
+                managementLog.write(.info, "Admins opted in to deletion (DeletableAdmins): \(protection.deletableAdmins.sorted())")
+            }
+        }
+        managementLog.write(.info, "Admin volume owners on the boot volume: \(adminVolumeOwners.sorted())")
+    }
+
+    /// Asks the evaluator about one account. Every deletion path goes through here.
+    private func decide(_ user: String, lastLogin: Date?, recordedCreation: Date?) -> DeletionDecision {
+        let facts = inspector.facts(for: user, lastLogin: lastLogin, recordedCreation: recordedCreation, volumeUsers: volumeUsers)
+        let remaining = adminVolumeOwners.subtracting([user]).count
+        return DeletionEvaluator.evaluate(facts, policy: policy, protection: protection, adminVolumeOwnersRemaining: remaining)
+    }
     
     private func getCurrentConsoleUser() -> String? {
         let process = Process()
@@ -219,7 +227,7 @@ class UserManager {
         // Force mode overrides all policies
         if config.forceMode {
             policy = DeletionPolicy(duration: 0, strategy: .loginAndCreation, forceTermDeletion: true)
-            await log(.info, "FORCE MODE: Overriding all deletion policies - will delete all eligible users immediately.")
+            await log(.info, "FORCE MODE: the age threshold is zero; exclusions and admin protection still apply.")
             return
         }
         
@@ -306,12 +314,16 @@ class UserManager {
         await log(.info, "Processing deferred deletions: \(deferredUsers)")
         
         for user in deferredUsers {
-            if excludeList.contains(user) {
-                await log(.info, "Skipping deferred user '\(user)' (excluded).")
-                try await clearDeferred(user: user)
+            guard inspector.exists(user) else {
+                await log(.info, "Deferred user '\(user)' no longer exists.")
                 continue
             }
-            try await deleteUser(user)
+            let decision = decide(user, lastLogin: nil, recordedCreation: nil)
+            guard decision.shouldDelete else {
+                await log(.info, "Keeping deferred user '\(user)': \(decision.reason).")
+                continue
+            }
+            try await deleteUser(user, reason: decision.reason)
         }
     }
     
@@ -346,15 +358,9 @@ class UserManager {
         return []
     }
     
-    private func clearDeferred(user: String) async throws {
-        // This is a simplified version - would need full implementation
-        await log(.info, "Clearing deferred deletion for user: \(user)")
-    }
-    
     private func repairUserStates() async throws {
-        await log(.info, "Starting repair pass for problematic user states.")
-        // Implementation would go here - complex user state repair logic
-        await log(.info, "User state repair pass completed.")
+        // Not implemented yet; the shell version's repair pass is still the one in use.
+        await log(.debug, "User state repair is not implemented in this version; skipped.")
     }
     
     private func processUsers() async throws {
@@ -370,140 +376,67 @@ class UserManager {
         }
         
         let allUsers = Set(lastLogins.keys).union(Set(creationDates.keys))
-        let currentTime = Int64(Date().timeIntervalSince1970)
-        
-        for user in allUsers {
-            // Skip excluded users
-            if excludeList.contains(user) {
-                await log(.info, "Skipping excluded user: '\(user)'")
+
+        for user in allUsers.sorted() {
+            guard inspector.exists(user) else {
+                await log(.debug, "'\(user)' has no account any more; nothing to delete.")
                 continue
             }
-            
-            await log(.info, "Processing user: '\(user)'")
-            
-            // Force term deletion overrides all other logic
-            if policy.forceTermDeletion {
-                await log(.info, "End-of-term forced deletion for '\(user)'.")
-                try await deleteUser(user)
-                continue
-            }
-            
-            let timeSinceLast = lastLogins[user].map { currentTime - $0 } ?? 0
-            let timeSinceCreate = creationDates[user].map { currentTime - $0 } ?? 0
-            
-            let shouldDelete: Bool
-            switch policy.strategy {
-            case .creationOnly:
-                shouldDelete = timeSinceCreate > policy.duration
-                if shouldDelete {
-                    await log(.info, "Deleting '\(user)' (creation older than \(policy.duration) seconds).")
-                } else {
-                    await log(.info, "'\(user)' is within creation threshold; no action taken.")
-                }
-                
-            case .loginAndCreation:
-                shouldDelete = timeSinceCreate > policy.duration || timeSinceLast > policy.duration
-                if shouldDelete {
-                    await log(.info, "Deleting '\(user)' (older than \(policy.duration) by login or creation).")
-                } else {
-                    await log(.info, "'\(user)' is within threshold; no action taken.")
-                }
-            }
-            
-            if shouldDelete {
-                try await deleteUser(user)
+            let decision = decide(
+                user,
+                lastLogin: lastLogins[user].map { Date(timeIntervalSince1970: TimeInterval($0)) },
+                recordedCreation: creationDates[user].map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            )
+            if decision.shouldDelete {
+                await log(.info, "Delete '\(user)': \(decision.reason).")
+                try await deleteUser(user, reason: decision.reason)
+            } else {
+                await log(.info, "Keep '\(user)': \(decision.reason).")
             }
         }
     }
     
-    private func deleteUser(_ username: String) async throws {
+    private func deleteUser(_ username: String, reason: String) async throws {
         if config.simulationMode {
-            await log(.info, "SIMULATION: Would delete user '\(username)' (no actual deletion performed)")
+            await log(.info, "SIMULATION: would delete '\(username)' (\(reason)); nothing was changed.")
             return
         }
-        
-        // Check for active console sessions
+
+        // Someone at the console: leave deletions for a later run. The next run
+        // evaluates the account again, so nothing is lost by waiting.
         if let consoleUser = getCurrentConsoleUser(),
            consoleUser != "loginwindow" && consoleUser != "root" && consoleUser != "admin" {
-            await log(.info, "Console user '\(consoleUser)' active; deferring deletion of '\(username)'.")
-            try deferDelete(user: username)
+            await log(.info, "Console user '\(consoleUser)' active; deletion of '\(username)' left for a later run.")
             return
         }
-        
-        await log(.info, "Initiating deletion for user: '\(username)'")
-        
-        // Kill processes for this user
-        try await killUserProcesses(username)
-        
-        // Scrub cloud attributes  
-        try await scrubCloudAttributes(for: username)
-        
-        // Disable SecureToken if enabled
-        try await disableSecureToken(for: username)
-        
-        // Delete user via sysadminctl
-        try await deleteUserAccount(username)
-        
-        // Remove home directory if DS record is gone
-        if !(try await userExists(username)) {
-            try await removeHomeDirectory(for: username)
-            try await removeFromFileVault(username)
-        }
-        
-        // Flush cache and verify
-        try await flushDirectoryCache()
-        
-        if try await verifyDeletion(username) {
-            await log(.info, "Deletion of '\(username)' verified.")
-            try await clearDeferred(user: username)
-        } else {
-            await log(.error, "Deletion verification failed for '\(username)'.")
+
+        await log(.info, "Deleting '\(username)'.")
+        let deleter = UserDeleter(log: { level, message in ManagementLog.shared.write(level, message) })
+        do {
+            try deleter.delete(username)
+            deletedCount += 1
+            await log(.info, "Deletion of '\(username)' verified: no record, no home folder, no volume user.")
+        } catch {
+            failedCount += 1
+            await log(.error, "\(error)")
         }
     }
-    
-    // Additional helper methods would be implemented here...
-    private func deferDelete(user: String) throws {
-        // Implementation for deferring user deletion
-    }
-    
-    private func killUserProcesses(_ username: String) async throws {
-        // Implementation for killing user processes
-    }
-    
-    private func scrubCloudAttributes(for username: String) async throws {
-        // Implementation for scrubbing cloud/IdP attributes
-    }
-    
-    private func disableSecureToken(for username: String) async throws {
-        // Implementation for disabling SecureToken
-    }
-    
-    private func deleteUserAccount(_ username: String) async throws {
-        // Implementation for deleting user account via sysadminctl
-    }
-    
-    private func userExists(_ username: String) async throws -> Bool {
-        // Implementation for checking if user exists in DS
-        return false
-    }
-    
-    private func removeHomeDirectory(for username: String) async throws {
-        // Implementation for removing home directory
-    }
-    
-    private func removeFromFileVault(_ username: String) async throws {
-        // Implementation for removing user from FileVault
-    }
-    
-    private func verifyDeletion(_ username: String) async throws -> Bool {
-        // Implementation for verifying user deletion
-        return true
-    }
-    
+
+    /// Accounts with no home folder go through the same evaluator as everyone
+    /// else, using their directory creation date. No login is recorded for
+    /// them, which counts as "never".
     private func cleanupOrphanedUsers() async throws {
-        await log(.info, "Starting cleanup of orphaned user records.")
-        // Implementation would go here
-        await log(.info, "Orphaned user account cleanup completed.")
+        await log(.info, "Checking accounts that have no home folder.")
+        for user in inspector.localUserNames().sorted() {
+            guard !FileManager.default.fileExists(atPath: "/Users/\(user)") else { continue }
+            let decision = decide(user, lastLogin: nil, recordedCreation: nil)
+            if decision.shouldDelete {
+                await log(.info, "Delete orphaned account '\(user)': \(decision.reason).")
+                try await deleteUser(user, reason: decision.reason)
+            } else {
+                await log(.info, "Keep orphaned account '\(user)': \(decision.reason).")
+            }
+        }
     }
     
     private func flushDirectoryCache() async throws {
@@ -548,9 +481,8 @@ class UserManager {
 enum UserManagerError: Error {
     case plistNotFound
     case instanceAlreadyRunning
-    case adminPasswordNotFound
-    case adminPasswordDecodeError
     case exclusionsNotFound
     case userDataNotFound
+    case deletionsFailed(Int)
     case untrustedSessionsPlist
 }

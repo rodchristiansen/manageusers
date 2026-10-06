@@ -63,84 +63,106 @@ class RemediationManager {
     }
     
     // MARK: - User Cleanup
-    func cleanupOrphans(type: String, simulate: Bool) async throws {
-        log.info("Starting orphan cleanup (type: \(type), simulate: \(simulate))...")
-        
+    /// Orphans go through the same evaluator as the main run: exclusions and
+    /// admin protection apply, and an account must be older than `days`.
+    /// Nothing is changed unless `simulate` is false (`--live`).
+    func cleanupOrphans(type: String, simulate: Bool, days: Int) async throws {
+        log.info("Starting orphan cleanup (type: \(type), simulate: \(simulate), older than \(days)d)...")
+
         switch type.lowercased() {
         case "dscl-orphans":
-            try await cleanupDsclOrphans(simulate: simulate)
+            try await cleanupDsclOrphans(simulate: simulate, days: days)
         case "home-orphans":
-            try await cleanupHomeOrphans(simulate: simulate)
+            try await cleanupHomeOrphans(simulate: simulate, days: days)
         case "both":
-            try await cleanupDsclOrphans(simulate: simulate)
-            try await cleanupHomeOrphans(simulate: simulate)
+            try await cleanupDsclOrphans(simulate: simulate, days: days)
+            try await cleanupHomeOrphans(simulate: simulate, days: days)
         default:
             throw RemediationError.invalidCleanupType(type)
         }
-        
+
         log.info("Orphan cleanup completed.")
     }
-    
-    private func cleanupDsclOrphans(simulate: Bool) async throws {
-        log.info("Cleaning up orphaned dscl records (users without home directories)...")
-        
-        let dsclUsers = try await getDsclUsers()
-        var orphanCount = 0
-        
-        for user in dsclUsers {
-            let homeDir = "/Users/\(user)"
-            if !FileManager.default.fileExists(atPath: homeDir) {
-                let allExcluded = alwaysExcludedUsers + customExcludeUsers
-                if !allExcluded.contains(user) {
-                    log.info("Found orphaned user: \(user) (no home directory)")
-                    orphanCount += 1
-                    
-                    if !simulate {
-                        try await deleteUserRecord(user)
-                        log.info("Deleted user record for \(user)")
-                    } else {
-                        log.info("SIMULATION: Would delete user record for \(user)")
-                    }
-                }
-            }
+
+    /// The same exclusions the main run uses: the built-in names plus the
+    /// Exclusions array in the sessions plist, so a remediation command never
+    /// deletes someone the scheduled run would keep.
+    private func protection() -> AccountProtection {
+        let settings = AdminGuardSettings.load()
+        var sessionExclusions: [String] = []
+        if let data = FileManager.default.contents(atPath: "/Library/Management/Cache/UserSessions.plist"),
+           let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+           let names = plist["Exclusions"] as? [String] {
+            sessionExclusions = names
         }
-        
-        if orphanCount == 0 {
-            log.info("No orphaned dscl records found.")
-        } else {
-            log.info("Processed \(orphanCount) orphaned dscl records.")
-        }
+        return AccountProtection(
+            exclusions: alwaysExcludedUsers + customExcludeUsers + UserManagementConstants.alwaysExcludedUsers + sessionExclusions,
+            deleteAdmins: settings.deleteAdmins,
+            deletableAdmins: settings.deletableAdmins
+        )
     }
-    
-    private func cleanupHomeOrphans(simulate: Bool) async throws {
-        log.info("Cleaning up orphaned home directories (directories without dscl records)...")
-        
-        let homeDirectories = try FileManager.default.contentsOfDirectory(atPath: "/Users")
-        let dsclUsers = try await getDsclUsers()
-        var orphanCount = 0
-        
-        for dir in homeDirectories {
-            if !dsclUsers.contains(dir) {
-                let allExcluded = alwaysExcludedUsers + customExcludeUsers
-                if !allExcluded.contains(dir) {
-                    log.info("Found orphaned home directory: /Users/\(dir)")
-                    orphanCount += 1
-                    
-                    if !simulate {
-                        try await removeDirectory("/Users/\(dir)")
-                        log.info("Removed directory /Users/\(dir)")
-                    } else {
-                        log.info("SIMULATION: Would remove directory /Users/\(dir)")
-                    }
-                }
+
+    private func cleanupDsclOrphans(simulate: Bool, days: Int) async throws {
+        log.info("Checking accounts that have no home folder...")
+        let inspector = AccountInspector()
+        let volumeUsers = inspector.volumeUsers()
+        let owners = inspector.adminVolumeOwners(volumeUsers: volumeUsers)
+        let policy = DeletionPolicy(duration: days * 86_400, strategy: .loginAndCreation, forceTermDeletion: false)
+        let guardSet = protection()
+        var count = 0
+
+        for user in inspector.localUserNames().sorted() where !FileManager.default.fileExists(atPath: "/Users/\(user)") {
+            let facts = inspector.facts(for: user, lastLogin: nil, recordedCreation: nil, volumeUsers: volumeUsers)
+            let decision = DeletionEvaluator.evaluate(facts, policy: policy, protection: guardSet,
+                                                      adminVolumeOwnersRemaining: owners.subtracting([user]).count)
+            guard decision.shouldDelete else {
+                log.info("Keep orphaned account '\(user)': \(decision.reason)")
+                continue
+            }
+            count += 1
+            if simulate {
+                log.info("SIMULATION: would delete orphaned account '\(user)' (\(decision.reason))")
+                continue
+            }
+            do {
+                try UserDeleter(log: { level, message in ManagementLog.shared.write(level, message) }).delete(user)
+                log.info("Deleted orphaned account '\(user)' and verified it is gone")
+            } catch {
+                log.error("\(error)")
             }
         }
-        
-        if orphanCount == 0 {
-            log.info("No orphaned home directories found.")
-        } else {
-            log.info("Processed \(orphanCount) orphaned home directories.")
+        log.info(count == 0 ? "No orphaned accounts to remove." : "\(count) orphaned account(s) \(simulate ? "would be" : "were") processed.")
+    }
+
+    /// Home folders with no account. Removed only when the folder is a real
+    /// directory (never a link), is not excluded, and was created more than
+    /// `days` ago.
+    private func cleanupHomeOrphans(simulate: Bool, days: Int) async throws {
+        log.info("Checking home folders that have no account...")
+        let inspector = AccountInspector()
+        let guardSet = protection()
+        let cutoff = Date().addingTimeInterval(-TimeInterval(days * 86_400))
+        var count = 0
+
+        for dir in try FileManager.default.contentsOfDirectory(atPath: "/Users").sorted() {
+            let path = "/Users/\(dir)"
+            guard !dir.hasPrefix("."), !guardSet.isExcluded(dir), !inspector.exists(dir),
+                  let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+                  attributes[.type] as? FileAttributeType == .typeDirectory else { continue }
+            let created = attributes[.creationDate] as? Date ?? Date()
+            guard created < cutoff else {
+                log.info("Keep home folder \(path): created within \(days)d")
+                continue
+            }
+            count += 1
+            if simulate {
+                log.info("SIMULATION: would remove home folder \(path)")
+            } else {
+                try await removeDirectory(path)
+                log.info("Removed home folder \(path)")
+            }
         }
+        log.info(count == 0 ? "No orphaned home folders to remove." : "\(count) orphaned home folder(s) \(simulate ? "would be" : "were") processed.")
     }
     
     // MARK: - User Counting and Listing
@@ -249,47 +271,61 @@ class RemediationManager {
     }
     
     // MARK: - Delete All Users
-    func deleteAllUsers(simulate: Bool, force: Bool, password: String?) async throws {
-        let allExcluded = alwaysExcludedUsers + customExcludeUsers
-        let guiUsers = try getGUIUsers()
-        let usersToDelete = guiUsers.filter { !allExcluded.contains($0) }
-        
+    /// Deletes every account the evaluator allows with a zero-day threshold.
+    /// Exclusions, admin protection and the last volume owner are still kept.
+    /// Runs as root; no password is taken or passed to any tool.
+    func deleteAllUsers(simulate: Bool, force: Bool) async throws {
+        let inspector = AccountInspector()
+        let volumeUsers = inspector.volumeUsers()
+        let owners = inspector.adminVolumeOwners(volumeUsers: volumeUsers)
+        let policy = DeletionPolicy(duration: 0, strategy: .loginAndCreation, forceTermDeletion: true)
+        let guardSet = protection()
+
+        var usersToDelete: [String] = []
+        for user in inspector.localUserNames().sorted() {
+            let facts = inspector.facts(for: user, lastLogin: nil, recordedCreation: nil, volumeUsers: volumeUsers)
+            let decision = DeletionEvaluator.evaluate(facts, policy: policy, protection: guardSet,
+                                                      adminVolumeOwnersRemaining: owners.subtracting([user]).count)
+            if decision.shouldDelete {
+                usersToDelete.append(user)
+            } else {
+                print("Keeping \(user): \(decision.reason)")
+            }
+        }
+
         if usersToDelete.isEmpty {
-            print("No non-excluded users found to delete.")
+            print("No deletable users found.")
             return
         }
-        
+
         print("Users to delete: \(usersToDelete)")
-        print("Excluded users (will be skipped): \(allExcluded)")
-        
-        if !force && !simulate {
-            print("\n⚠️  WARNING: This will DELETE ALL non-excluded users!")
-            print("This action cannot be undone.")
+
+        if simulate {
+            for user in usersToDelete { log.info("SIMULATION: would delete user: \(user)") }
+            print("Simulation only. Pass --live to delete.")
+            return
+        }
+
+        if !force {
+            print("\nWARNING: This will DELETE the users listed above. This cannot be undone.")
             print("Type 'DELETE ALL USERS' to continue: ", terminator: "")
-            
-            let input = readLine() ?? ""
-            if input != "DELETE ALL USERS" {
+            guard readLine() == "DELETE ALL USERS" else {
                 print("Operation cancelled.")
                 return
             }
         }
-        
-        let adminPassword: String
-        if let providedPassword = password {
-            adminPassword = providedPassword
-        } else {
-            adminPassword = try await getAdminPassword()
-        }
-        
+
+        let deleter = UserDeleter(log: { level, message in ManagementLog.shared.write(level, message) })
         for user in usersToDelete {
-            if simulate {
-                log.info("SIMULATION: Would delete user: \(user)")
-            } else {
-                log.info("Deleting user: \(user)")
-                try await deleteUserWithPassword(user, adminPassword: adminPassword)
+            log.info("Deleting user: \(user)")
+            do {
+                try deleter.delete(user)
+                log.info("Deleted '\(user)' and verified it is gone")
+            } catch {
+                log.error("\(error)")
             }
         }
-        
+
         log.info("Delete all users operation completed.")
     }
     
@@ -491,39 +527,6 @@ class RemediationManager {
         }
     }
     
-    private func deleteUserRecord(_ username: String) async throws {
-        // Try sysadminctl first
-        let process1 = Process()
-        process1.executableURL = URL(fileURLWithPath: "/usr/sbin/sysadminctl")
-        process1.arguments = ["-deleteUser", username]
-        
-        try process1.run()
-        process1.waitUntilExit()
-        
-        // If that fails, try dscl
-        if process1.terminationStatus != 0 {
-            let process2 = Process()
-            process2.executableURL = URL(fileURLWithPath: "/usr/bin/dscl")
-            process2.arguments = [".", "-delete", "/Users/\(username)"]
-            
-            try process2.run()
-            process2.waitUntilExit()
-        }
-    }
-    
-    private func deleteUserWithPassword(_ username: String, adminPassword: String) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/sysadminctl")
-        process.arguments = ["-deleteUser", username, "-adminUser", "Administrator", "-adminPassword", adminPassword]
-        
-        try process.run()
-        process.waitUntilExit()
-        
-        if process.terminationStatus != 0 {
-            throw RemediationError.userDeletionFailed(username)
-        }
-    }
-    
     private func removeDirectory(_ path: String) async throws {
         // Set permissions to allow removal
         let chmodProcess = Process()
@@ -541,32 +544,6 @@ class RemediationManager {
         
         // Remove directory
         try FileManager.default.removeItem(atPath: path)
-    }
-    
-    private func getAdminPassword() async throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["read", "ManagedInstalls", "SecureTokenAdmin"]
-        
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        
-        try process.run()
-        process.waitUntilExit()
-        
-        guard process.terminationStatus == 0 else {
-            throw RemediationError.adminPasswordNotFound
-        }
-        
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let base64String = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              let decodedData = Data(base64Encoded: base64String),
-              let password = String(data: decodedData, encoding: .utf8) else {
-            throw RemediationError.adminPasswordDecodeError
-        }
-        
-        return password
     }
     
     private func runCommand(_ command: [String]) async throws {
@@ -596,8 +573,6 @@ enum RemediationError: Error, LocalizedError {
     case invalidCleanupType(String)
     case invalidFilterType(String)
     case invalidXCredsAction(String)
-    case adminPasswordNotFound
-    case adminPasswordDecodeError
     case userDeletionFailed(String)
     
     var errorDescription: String? {
@@ -608,10 +583,6 @@ enum RemediationError: Error, LocalizedError {
             return "Invalid filter type: \(filter). Valid options: all, gui, dscl, excluded"
         case .invalidXCredsAction(let action):
             return "Invalid XCreds action: \(action). Valid options: load, unload, uninstall, status"
-        case .adminPasswordNotFound:
-            return "Admin password not found in ManagedInstalls.plist"
-        case .adminPasswordDecodeError:
-            return "Failed to decode admin password from base64"
         case .userDeletionFailed(let username):
             return "Failed to delete user: \(username)"
         }

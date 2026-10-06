@@ -101,8 +101,8 @@ sudo chmod +x /usr/local/bin/manageusers
 # Simulate user deletions (safe mode)
 ./manageusers delete --simulate --verbose
 
-# Delete users inactive for 45 days
-./manageusers delete --days 45 --force
+# Delete for real (simulation is the default; --live is required)
+./manageusers delete --live
 
 # Use custom exclusions list
 ./manageusers delete --exclusions-plist /path/to/exclusions.plist
@@ -113,8 +113,8 @@ sudo chmod +x /usr/local/bin/manageusers
 ```
 
 **Available Flags:**
-- `--simulate` / `-s` - Enable simulation mode (no actual deletions)
-- `--force` / `-f` - Enable force mode (bypass time restrictions)
+- `--simulate` / `-s` - Simulation mode (the default; no actual deletions)
+- `--force` / `-f` - Force mode: the age threshold drops to zero, but exclusions and admin protection still apply
 - `--live` / `-l` - Disable simulation mode (perform actual deletions)
 - `--verbose` / `-v` - Enable verbose logging
 - `--days <days>` - Override duration threshold in days
@@ -132,10 +132,24 @@ configuration profile wins over `/Library/Preferences/com.github.manageusers.pli
 | `DeletionDays` | integer | Inactivity threshold in days, replacing the area-derived one |
 | `DeletionStrategy` | string | `login-and-creation` or `creation-only` |
 | `AdditionalExclusions` | array of strings | Accounts never deleted, on top of the built-in list |
+| `DeleteAdmins` | boolean | Allow admin accounts to be deleted (default false) |
+| `DeletableAdmins` | array of strings | Admin accounts that may be deleted while `DeleteAdmins` is false |
 
 The Remote Desktop area and room fields (`Text2`, `Text3`) are read through CFPreferences, so a
 profile that sets them counts too. The session plist that drives deletions is used only when it is
 owned by root and writable by no other account.
+
+### Deletion rules
+
+An account is deleted only when the evaluator allows it:
+
+- With the default `login-and-creation` strategy, both the account's creation and its last login must be older than the threshold. No recorded login counts as "never". With `creation-only`, only the creation age counts.
+- An account whose creation date cannot be read is kept.
+- Excluded names are always kept.
+- Members of the `admin` group are kept unless `DeleteAdmins` is true, or the name is listed in `DeletableAdmins`. Both are read from the `com.github.manageusers` domain, so a configuration profile can set them; the names match ManageUsers for Windows.
+- The last admin owner of the boot volume is never deleted.
+
+Deletion runs as root with `sysadminctl -deleteUser -secure`, falls back to removing the directory record, removes the account's volume user, then removes `/Users/<name>` only when it is a real folder. A deletion is logged as done only after the record, the home folder and the volume user are confirmed gone; otherwise it is logged as an error and the run exits non-zero. No administrator password is read or passed to any tool.
 
 ### Session Tracking
 
@@ -164,8 +178,11 @@ owned by root and writable by no other account.
 # Check specific user
 ./manageusers remediate secure-token john.doe
 
-# Clean up orphaned user records
+# Report orphaned accounts and home folders (simulation is the default)
 ./manageusers remediate cleanup-orphans --verbose
+
+# Remove orphans older than 28 days, through the same rules as `delete`
+./manageusers remediate cleanup-orphans --live --days 28
 
 # Count users and analyze discrepancies
 ./manageusers remediate count
@@ -173,9 +190,9 @@ owned by root and writable by no other account.
 # List all users with properties
 ./manageusers remediate list --verbose
 
-# Emergency: Delete all non-excluded users (DANGEROUS)
-./manageusers remediate delete-all --simulate  # Test first!
-./manageusers remediate delete-all --force     # LIVE MODE
+# Emergency: delete every account the rules allow, with no age threshold (DANGEROUS)
+./manageusers remediate delete-all             # simulation
+./manageusers remediate delete-all --live      # asks for confirmation
 
 # Manage XCreds authentication
 ./manageusers remediate xcreds --verbose
