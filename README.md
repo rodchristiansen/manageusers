@@ -91,9 +91,11 @@ manageusers has its own folder, as outset has `/usr/local/outset`:
 |---|---|
 | `/usr/local/manageusers/manageusers` | The tool |
 | `/usr/local/bin/manageusers` | Symlink to it, for the PATH |
+| `/Applications/Utilities/Managed Users Cleanup.app` | The Prefs / Run / Logs window, with its privileged helper inside |
+| `/Library/LaunchDaemons/com.github.manageusers.helper.plist` | The helper's on-demand LaunchDaemon |
 | `/Library/Managed Users/logs` | Day logs |
 
-`packaging/build-pkg.sh <version> <output-dir> [installer identity]` builds the package. Its preinstall removes the 2.x layout: a plain binary at `/usr/local/bin/manageusers`, and the `/Library/Management/Scripts/ManageUsers.sh` symlink, removed only when it points at that binary so the legacy bash script at the same path is never touched.
+`packaging/build-pkg.sh <version> <output-dir> [installer identity]` builds the one package, `com.github.rodchristiansen.manageusers`, holding the tool and the window (see `ManagedUsersCleanup/README.md`); set `SIGNING_IDENTITY_APP` to sign the app and helper. Installing it runs nothing: the postinstall registers the helper's Mach service, launchd starts the helper only when the window connects, and the tool runs only from Run in the window. On macOS 13 and older the package still installs the tool, but the helper is not loaded. The window used to ship as its own package, `com.github.manageusers.gui`; the postinstall forgets that receipt, since its files now belong to this package. Its preinstall removes the 2.x layout: a plain binary at `/usr/local/bin/manageusers`, and the `/Library/Management/Scripts/ManageUsers.sh` symlink, removed only when it points at that binary so the legacy bash script at the same path is never touched.
 
 ### Manual Installation
 
