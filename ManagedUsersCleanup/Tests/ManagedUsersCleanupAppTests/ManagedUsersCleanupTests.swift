@@ -207,3 +207,17 @@ private struct FakeSource: PreferenceSource {
         #expect(PathTrust.untrustedPathProblem(dir + "/missing")?.contains("does not exist") == true)
     }
 }
+
+
+@Suite("Managed preferences file check")
+struct ManagedPreferencesFileTests {
+    @Test("Finds a key set in a managed preferences plist, and only that key")
+    func readsManagedFile() throws {
+        let path = NSTemporaryDirectory() + "managed-\(UUID().uuidString).plist"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        try (["DeletionDays": 45] as NSDictionary).write(to: URL(fileURLWithPath: path))
+        #expect(UsersPreferenceKey.managedFileSetsKey("DeletionDays", path: path))
+        #expect(!UsersPreferenceKey.managedFileSetsKey("DeleteAdmins", path: path))
+        #expect(!UsersPreferenceKey.managedFileSetsKey("DeletionDays", path: path + ".missing"))
+    }
+}

@@ -155,6 +155,14 @@ public enum UsersPreferenceKey: String, CaseIterable, Sendable {
     public static func isWritable(_ key: String, isForced: (String) -> Bool) -> Bool {
         isWritable(key) && !isForced(key)
     }
+
+    /// True when the managed preferences plist at `path` sets `key`. The helper is
+    /// long-lived and CFPreferences keeps the managed layer it loaded at start-up, so
+    /// a profile that arrives later is checked for in the file as well.
+    public static func managedFileSetsKey(_ key: String, path: String) -> Bool {
+        guard let dict = NSDictionary(contentsOfFile: path) else { return false }
+        return dict[key] != nil
+    }
 }
 
 /// Protocol exposed by the privileged helper daemon. All methods run as root.
