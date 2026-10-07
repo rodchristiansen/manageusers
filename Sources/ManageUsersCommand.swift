@@ -119,18 +119,24 @@ struct CleanupOrphans: AsyncParsableCommand {
         abstract: "Clean up orphaned user records and home directories"  
     )
     
-    @Flag(name: .shortAndLong, help: "Enable simulation mode")
+    @Flag(name: .shortAndLong, help: "Simulate (the default); kept for compatibility")
     var simulate = false
-    
+
+    @Flag(name: .long, help: "Actually delete; without it the cleanup only reports")
+    var live = false
+
     @Flag(name: .shortAndLong, help: "Enable verbose output")
     var verbose = false
-    
+
     @Option(help: "Cleanup type: dscl-orphans, home-orphans, both")
     var type: String = "both"
-    
+
+    @Option(help: "Only remove orphans older than this many days")
+    var days: Int = 28
+
     mutating func run() async throws {
         let remediation = RemediationManager(verbose: verbose)
-        try await remediation.cleanupOrphans(type: type, simulate: simulate)
+        try await remediation.cleanupOrphans(type: type, simulate: simulate || !live, days: days)
     }
 }
 
@@ -170,21 +176,21 @@ struct ListUsers: AsyncParsableCommand {
 struct DeleteAllUsers: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "delete-all",
-        abstract: "Delete all non-excluded users (DANGEROUS)"
+        abstract: "Delete every non-excluded, non-admin user (DANGEROUS; needs --live)"
     )
     
-    @Flag(name: .shortAndLong, help: "Enable simulation mode")
+    @Flag(name: .shortAndLong, help: "Simulate (the default); kept for compatibility")
     var simulate = false
-    
+
+    @Flag(name: .long, help: "Actually delete; without it the command only reports")
+    var live = false
+
     @Flag(name: .shortAndLong, help: "Skip confirmation prompt")
     var force = false
-    
-    @Option(help: "Admin password (use with caution)")
-    var password: String?
-    
+
     mutating func run() async throws {
         let remediation = RemediationManager(verbose: true)
-        try await remediation.deleteAllUsers(simulate: simulate, force: force, password: password)
+        try await remediation.deleteAllUsers(simulate: simulate || !live, force: force)
     }
 }
 
@@ -238,7 +244,11 @@ struct Remediation: AsyncParsableCommand {
     )
 }
 
-// MARK: - Main Command  
+// MARK: - Main Command
+// The entry point is @main rather than top-level code: from main.swift,
+// `await ManageUsers.main()` resolved to the synchronous entry point, which ran
+// each async command's default synchronous run() and only printed help.
+@main
 struct ManageUsers: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "SharedDevice User Management Tool",
@@ -256,6 +266,3 @@ struct ManageUsers: AsyncParsableCommand {
         defaultSubcommand: DeleteUsers.self
     )
 }
-
-// Entry point
-await ManageUsers.main()
