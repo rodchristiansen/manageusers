@@ -17,11 +17,16 @@ jobs:
       - name: Check the package layout
         run: |
           set -euo pipefail
-          packaging/build-pkg.sh 0.0.0 pkgout
-          files=$(pkgutil --payload-files pkgout/ManageUsers-0.0.0.pkg | grep -v '/\._')
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE" ]; then export DEVELOPER_DIR="$XCODE/Contents/Developer"; fi
+          packaging/build-pkg.sh 2026.01.01.0000 pkgout
+          files=$(pkgutil --payload-files pkgout/ManageUsers-2026.01.01.0000.pkg | grep -v '/\._')
           echo "$files"
           echo "$files" | grep -qx './usr/local/manageusers/manageusers'
           echo "$files" | grep -qx './usr/local/bin/manageusers'
+          echo "$files" | grep -qx './Applications/Utilities/Managed Users Cleanup.app/Contents/MacOS/ManagedUsersCleanup'
+          echo "$files" | grep -qx './Applications/Utilities/Managed Users Cleanup.app/Contents/MacOS/ManagedUsersCleanupHelper'
+          echo "$files" | grep -qx './Library/LaunchDaemons/com.github.manageusers.helper.plist'
           ! echo "$files" | grep -q 'Library/Management'
 
   managed-users-cleanup:
@@ -31,7 +36,7 @@ jobs:
         working-directory: ManagedUsersCleanup
     steps:
       - uses: actions/checkout@v4
-      - name: Test and build the unsigned window package
+      - name: Test and build the unsigned window
         run: |
           set -euo pipefail
           # Link against a macOS 26 SDK so the window gets the macOS 26 toolbar tabs.
@@ -39,4 +44,4 @@ jobs:
           if [ -n "$XCODE" ]; then export DEVELOPER_DIR="$XCODE/Contents/Developer"; fi
           xcrun --show-sdk-version
           swift test
-          make pkg
+          make app

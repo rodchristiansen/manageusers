@@ -1,9 +1,10 @@
 # Managed Users Cleanup
 
 A Prefs / Run / Logs window for manageusers, installed as
-`/Applications/Utilities/Managed Users Cleanup.app`. Install the `manageusers`
-package first: it puts the tool in `/usr/local/manageusers/manageusers`, with a
-`/usr/local/bin/manageusers` symlink. Data and logs stay under `/Library/Managed Users`.
+`/Applications/Utilities/Managed Users Cleanup.app`. It ships inside the one
+`manageusers` package, which also puts the tool in `/usr/local/manageusers/manageusers`,
+with a `/usr/local/bin/manageusers` symlink. Data and logs stay under `/Library/Managed Users`.
+The window and its helper need macOS 14 or later.
 
 - **Prefs** edits `/Library/Preferences/com.github.manageusers.plist`: the deletion
   threshold and strategy, extra exclusions, and the admin protection
@@ -17,7 +18,9 @@ package first: it puts the tool in `/usr/local/manageusers/manageusers`, with a
 
 ## Privileged helper
 
-The package installs `com.github.manageusers.helper` as a system LaunchDaemon. It
+The package installs `com.github.manageusers.helper` as a system LaunchDaemon, on
+demand only: no RunAtLoad and no KeepAlive, so launchd starts it when the window
+connects and installing the package runs nothing. It
 accepts connections only from `com.github.manageusers.gui` signed by its own Team
 ID, runs `/usr/local/manageusers/manageusers` (never the PATH symlink) with fixed
 arguments (never a command line from the caller, and account names only from a
@@ -30,9 +33,10 @@ An unsigned build therefore refuses every client.
 
 ```sh
 make test
-make pkg
+make app
 ```
 
-Set `SIGNING_IDENTITY_APP` and `SIGNING_IDENTITY_PKG` (Developer ID Application and
-Developer ID Installer) to sign, and `NOTARIZATION_PROFILE` to notarize with
-`make notarize`. `packaging/make-icon.swift` regenerates `packaging/AppIcon.iconset`.
+`make app` builds the bundle into `build/pkg-root`; `../packaging/build-pkg.sh` calls it
+and builds the one package. Set `SIGNING_IDENTITY_APP` (Developer ID Application) to
+sign the helper as `com.github.manageusers.helper` and the app as
+`com.github.manageusers.gui`. `packaging/make-icon.swift` regenerates `packaging/AppIcon.iconset`.

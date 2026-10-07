@@ -1,0 +1,61 @@
+#!/bin/zsh --no-rcs
+# Registers the Managed Users Cleanup window and loads its privileged helper.
+#
+# This script never runs manageusers, and neither does anything it loads. The
+# helper's LaunchDaemon has no RunAtLoad and no KeepAlive: launchd starts the
+# helper only when the window connects to it, and the helper runs the tool only
+# when someone clicks Run in that window. Installing the package deletes nothing.
+
+LOG="/private/tmp/manageusers-postinstall.log"
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG}"
+}
+
+TARGET="${3%/}"
+APP_PATH="${TARGET}/Applications/Utilities/Managed Users Cleanup.app"
+LABEL="com.github.manageusers.helper"
+DAEMON_PLIST="${TARGET}/Library/LaunchDaemons/${LABEL}.plist"
+# The window used to ship as its own package. Its files now belong to this one,
+# so drop the old receipt: a later removal of that package must not take the
+# app and helper with it.
+OLD_GUI_RECEIPT="com.github.manageusers.gui"
+# The window and helper are built for this macOS and later. The tool runs on
+# older systems, so the package installs there, but the helper is not loaded.
+MINIMUM_MACOS=14
+
+log "=== manageusers postinstall started ==="
+
+if /usr/sbin/pkgutil --volume "${TARGET:-/}" --pkg-info "${OLD_GUI_RECEIPT}" >/dev/null 2>&1; then
+    /usr/sbin/pkgutil --volume "${TARGET:-/}" --forget "${OLD_GUI_RECEIPT}" >/dev/null 2>&1 \
+        && log "Forgot the old ${OLD_GUI_RECEIPT} receipt"
+fi
+
+if [[ ! -f "${DAEMON_PLIST}" ]]; then
+    log "ERROR: helper LaunchDaemon plist not found: ${DAEMON_PLIST}"
+    exit 1
+fi
+
+if [[ "${TARGET:-/}" != "/" ]]; then
+    log "Installed to ${TARGET}; the helper loads at that volume's next start-up"
+    exit 0
+fi
+
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister "${APP_PATH}" 2>/dev/null
+
+CURRENT=$(/usr/bin/sw_vers -productVersion)
+if (( ${CURRENT%%.*} < MINIMUM_MACOS )); then
+    log "macOS ${CURRENT} is older than ${MINIMUM_MACOS}: the window and its helper are not supported here; helper not loaded"
+    exit 0
+fi
+
+# Reload so an upgrade picks up the new helper binary. Bootstrapping registers
+# the Mach service only; the helper process does not start until a client connects.
+/bin/launchctl bootout "system/${LABEL}" 2>/dev/null
+if output=$(/bin/launchctl bootstrap system "${DAEMON_PLIST}" 2>&1); then
+    log "Helper registered: ${LABEL}"
+else
+    log "WARNING: launchctl bootstrap failed for ${LABEL}: ${output}"
+fi
+
+log "=== manageusers postinstall completed ==="
+exit 0

@@ -1,9 +1,10 @@
 #!/usr/bin/make -f
 #
 # Managed Users Cleanup build
-# Builds the app bundle and an installer package. With SIGNING_IDENTITY_APP and
-# SIGNING_IDENTITY_PKG set it signs both; without them it builds unsigned, as the
-# public release does. An unsigned helper refuses every client by design.
+# Builds the app bundle, with the privileged helper inside. It ships in the one
+# manageusers package, built by ../packaging/build-pkg.sh, which calls `make app`.
+# With SIGNING_IDENTITY_APP set it signs the app and helper; without it they stay
+# unsigned, as the public release does. An unsigned helper refuses every client.
 #
 
 -include .env
@@ -27,12 +28,9 @@ APP_IDENTIFIER = com.github.manageusers.gui
 SWIFT_BUILD_DIR = $(shell swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
 ICONSET = packaging/AppIcon.iconset
 
-PKG_ID = com.github.manageusers.gui
-PKG_OUTPUT = $(BUILD_DIR)/ManagedUsersCleanup-$(VERSION).pkg
+.PHONY: all build test app verify clean
 
-.PHONY: all build test app pkg notarize verify clean
-
-all: pkg
+all: app
 
 # Record the SDK the binaries are linked against. Some toolchains write the
 # deployment target as the SDK version, and AppKit then keeps the pre-macOS 26
@@ -73,36 +71,7 @@ else
 	@echo "SIGNING_IDENTITY_APP not set: app bundle left unsigned"
 endif
 
-pkg: app
-	@pkgbuild --analyze --root "$(PKG_ROOT)" "$(BUILD_DIR)/component.plist"
-	@/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$(BUILD_DIR)/component.plist" 2>/dev/null \
-		|| /usr/libexec/PlistBuddy -c "Add :0:BundleIsRelocatable bool false" "$(BUILD_DIR)/component.plist"
-	@/usr/libexec/PlistBuddy -c "Set :0:BundleIsVersionChecked false" "$(BUILD_DIR)/component.plist"
-	@pkgbuild --root "$(PKG_ROOT)" --component-plist "$(BUILD_DIR)/component.plist" \
-		--identifier $(PKG_ID) --version $(VERSION) --scripts packaging/scripts \
-		"$(BUILD_DIR)/component.pkg"
-ifneq ($(SIGNING_IDENTITY_PKG),)
-	@productbuild --package "$(BUILD_DIR)/component.pkg" --identifier $(PKG_ID) --version $(VERSION) \
-		--sign "$(SIGNING_IDENTITY_PKG)" --timestamp "$(PKG_OUTPUT)"
-else
-	@productbuild --package "$(BUILD_DIR)/component.pkg" --identifier $(PKG_ID) --version $(VERSION) "$(PKG_OUTPUT)"
-endif
-	@rm -f "$(BUILD_DIR)/component.pkg"
-	@echo "Built $(PKG_OUTPUT)"
-
-# Notarize and staple the signed package, as BootstrapMate does. Needs a
-# notarytool keychain profile in NOTARIZATION_PROFILE.
-notarize: pkg
-ifeq ($(NOTARIZATION_PROFILE),)
-	@echo "NOTARIZATION_PROFILE not set: cannot notarize" && exit 1
-endif
-	@xcrun notarytool submit "$(PKG_OUTPUT)" --keychain-profile "$(NOTARIZATION_PROFILE)" --wait
-	@xcrun stapler staple "$(PKG_OUTPUT)"
-	@echo "Notarized and stapled $(PKG_OUTPUT)"
-
 verify:
-	@pkgutil --check-signature "$(PKG_OUTPUT)"
-	@spctl --assess --type install --verbose "$(PKG_OUTPUT)"
 	@codesign --verify --strict --verbose=2 "$(PKG_ROOT)/$(APP_BUNDLE_PATH)"
 	@codesign -dr - "$(APP_CONTENTS)/MacOS/$(HELPER_BINARY_NAME)"
 
