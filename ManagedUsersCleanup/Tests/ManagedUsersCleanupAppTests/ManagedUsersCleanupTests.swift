@@ -89,6 +89,9 @@ import ManagedUsersCleanupXPC
         #expect(UsersPreferenceKey.isWritable("DeletableAdmins"))
         #expect(!UsersPreferenceKey.isWritable("Exclusions"))
         #expect(!UsersPreferenceKey.isWritable("SecureTokenAdmin"))
+        #expect(UsersPreferenceKey.isWritable("DeletionDays", isForced: { _ in false }))
+        #expect(!UsersPreferenceKey.isWritable("DeletionDays", isForced: { $0 == "DeletionDays" }))
+        #expect(!UsersPreferenceKey.isWritable("Exclusions", isForced: { _ in false }))
     }
 
     @Test func parsesThePlanLine() {

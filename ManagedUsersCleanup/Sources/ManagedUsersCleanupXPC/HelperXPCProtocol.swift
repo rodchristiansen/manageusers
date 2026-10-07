@@ -148,6 +148,13 @@ public enum UsersPreferenceKey: String, CaseIterable, Sendable {
     public static func isWritable(_ key: String) -> Bool {
         UsersPreferenceKey(rawValue: key) != nil
     }
+
+    /// True when the helper may write the key: it is one the window edits and no
+    /// configuration profile forces it. A profile-set value always wins, so a write
+    /// underneath it would only leave a stale value behind.
+    public static func isWritable(_ key: String, isForced: (String) -> Bool) -> Bool {
+        isWritable(key) && !isForced(key)
+    }
 }
 
 /// Protocol exposed by the privileged helper daemon. All methods run as root.

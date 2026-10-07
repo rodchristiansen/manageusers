@@ -140,7 +140,9 @@ final class HelperCommandRunner: NSObject, HelperXPCProtocol, @unchecked Sendabl
     }
 
     private func write(key: String, value: CFPropertyList?, reply: @escaping (Bool) -> Void) {
-        guard UsersPreferenceKey.isWritable(key) else {
+        let domain = Self.domain
+        guard UsersPreferenceKey.isWritable(key, isForced: { CFPreferencesAppValueIsForced($0 as CFString, domain) }) else {
+            NSLog("Managed Users Cleanup helper refused a write to %@", key)
             reply(false)
             return
         }
