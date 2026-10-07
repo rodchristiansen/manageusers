@@ -61,18 +61,24 @@ class UserManager {
         await log(.info, "Log file: \(managementLog.path)")
         await log(.info, "UserSessions plist: \(userSessionsPlist)")
 
-        // Check if plist exists
-        guard FileManager.default.fileExists(atPath: userSessionsPlist) else {
-            await log(.error, "UserSessions plist not found at \(userSessionsPlist)")
-            await log(.error, "Make sure user sessions have been tracked first.")
-            throw UserManagerError.plistNotFound
-        }
-
-        // The plist decides who is excluded from deletion, so act on it only when
-        // root alone could have written it.
-        guard FileTrust.isTrustedFile(userSessionsPlist) else {
+        switch Self.sessionsFileState(at: userSessionsPlist) {
+        case .missing:
+            // A Mac that has never tracked sessions has no plist. That is a normal
+            // state: nothing is evaluated, so nothing can be deleted, and the run
+            // succeeds. No other age source stands in for the missing data.
+            await log(.info, "No sessions tracked yet (\(userSessionsPlist) does not exist); no account was evaluated or deleted.")
+            await log(.info, "===== ManageUsers completed =====")
+            if config.printPlan {
+                print(Self.planLine([]))
+            }
+            return
+        case .untrusted:
+            // The plist decides who is excluded from deletion, so act on it only
+            // when root alone could have written it.
             await log(.error, "UserSessions plist at \(userSessionsPlist) is not owned by root or is writable by another account; refusing to use it.")
             throw UserManagerError.untrustedSessionsPlist
+        case .present:
+            break
         }
 
         await log(.info, "UserSessions plist found")
@@ -124,6 +130,25 @@ class UserManager {
         if failedCount > 0 { throw UserManagerError.deletionsFailed(failedCount) }
     }
     
+    enum SessionsFileState: Equatable {
+        /// Nothing at the path: no sessions have been tracked yet.
+        case missing
+        /// Something is there, but not a file only root could have written.
+        case untrusted
+        /// A trusted file. It may still fail to read or parse, which is an error.
+        case present
+    }
+
+    /// Classifies the sessions plist without following a link, so a dangling
+    /// link counts as untrusted rather than missing.
+    static func sessionsFileState(at path: String) -> SessionsFileState {
+        var info = stat()
+        if lstat(path, &info) != 0 {
+            return errno == ENOENT ? .missing : .untrusted
+        }
+        return FileTrust.isTrustedFile(path) ? .present : .untrusted
+    }
+
     /// One line a caller can parse: the accounts this simulation would delete.
     static func planLine(_ planned: [(name: String, reason: String)]) -> String {
         let accounts = planned.map { ["name": $0.name, "reason": $0.reason] }
@@ -495,7 +520,6 @@ class UserManager {
 
 // MARK: - Errors
 enum UserManagerError: Error {
-    case plistNotFound
     case instanceAlreadyRunning
     case exclusionsNotFound
     case userDataNotFound

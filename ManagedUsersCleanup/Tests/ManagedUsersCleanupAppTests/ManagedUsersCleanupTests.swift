@@ -12,6 +12,8 @@ import ManagedUsersCleanupXPC
         #expect(LineLevel.classify("[2026-10-06 09:14:02] DEBUG User state repair is not implemented in this version; skipped.") == .debug)
         #expect(LineLevel.classify("[2026-10-06 09:14:02] INFO  Keep 's2': excluded.") == .info)
         #expect(LineLevel.classify("[2026-10-06 09:14:02] INFO  ===== ManageUsers started =====") == .header)
+        // A Mac with no sessions plist yet: an ordinary info line, so the run shows as clean.
+        #expect(LineLevel.classify("[2026-10-06 09:14:02] INFO  No sessions tracked yet (/Library/Management/Cache/UserSessions.plist does not exist); no account was evaluated or deleted.") == .info)
     }
 
     @Test func consoleLevels() {
