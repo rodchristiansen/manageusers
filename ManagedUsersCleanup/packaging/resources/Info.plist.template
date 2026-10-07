@@ -12,6 +12,8 @@
     <string>Managed Users Cleanup</string>
     <key>CFBundleIconFile</key>
     <string>ManagedUsersCleanup</string>
+    <key>CFBundleIconName</key>
+    <string>ManagedUsersCleanup</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

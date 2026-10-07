@@ -39,4 +39,6 @@ make app
 `make app` builds the bundle into `build/pkg-root`; `../packaging/build-pkg.sh` calls it
 and builds the one package. Set `SIGNING_IDENTITY_APP` (Developer ID Application) to
 sign the helper as `com.github.manageusers.helper` and the app as
-`com.github.manageusers.gui`. `packaging/make-icon.swift` regenerates `packaging/AppIcon.iconset`.
+`com.github.manageusers.gui`. The icon is the Icon Composer bundle
+`Resources/ManagedUsersCleanup.icon`; `make app` compiles it with Xcode 27's `actool`
+and stops if Xcode 27 is not installed.
