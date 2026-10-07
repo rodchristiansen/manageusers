@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  cli:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test the command-line tool
+        run: |
+          swift build
+          swift test
+      - name: Check the package layout
+        run: |
+          set -euo pipefail
+          packaging/build-pkg.sh 0.0.0 pkgout
+          files=$(pkgutil --payload-files pkgout/ManageUsers-0.0.0.pkg | grep -v '/\._')
+          echo "$files"
+          echo "$files" | grep -qx './usr/local/manageusers/manageusers'
+          echo "$files" | grep -qx './usr/local/bin/manageusers'
+          ! echo "$files" | grep -q 'Library/Management'
+
+  managed-users-cleanup:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ManagedUsersCleanup
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test and build the unsigned window package
+        run: |
+          set -euo pipefail
+          # Link against a macOS 26 SDK so the window gets the macOS 26 toolbar tabs.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE" ]; then export DEVELOPER_DIR="$XCODE/Contents/Developer"; fi
+          xcrun --show-sdk-version
+          swift test
+          make pkg
