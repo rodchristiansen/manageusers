@@ -189,3 +189,45 @@ struct DeletionPlanTests {
         #expect(UserManager.planLine([]) == "MANAGEUSERS_PLAN {\"accounts\":[]}")
     }
 }
+
+@Suite("Sessions plist")
+struct SessionsFileStateTests {
+    private func makeDirectory() throws -> String {
+        let directory = NSTemporaryDirectory() + "manageusers-sessions-" + UUID().uuidString
+        try FileManager.default.createDirectory(
+            atPath: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+        return directory
+    }
+
+    @Test("A missing plist means no sessions tracked yet, not an error")
+    func missing() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        #expect(UserManager.sessionsFileState(at: directory + "/UserSessions.plist") == .missing)
+        #expect(UserManager.sessionsFileState(at: directory + "/Cache/UserSessions.plist") == .missing)
+    }
+
+    @Test("A plist that exists is used, even if it will fail to parse")
+    func present() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let path = directory + "/UserSessions.plist"
+        try Data("not a plist".utf8).write(to: URL(fileURLWithPath: path))
+        chmod(path, 0o644)
+        #expect(UserManager.sessionsFileState(at: path) == .present)
+    }
+
+    @Test("A writable plist or a dangling link is refused, not treated as missing")
+    func untrusted() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let writable = directory + "/Writable.plist"
+        try Data().write(to: URL(fileURLWithPath: writable))
+        chmod(writable, 0o666)
+        #expect(UserManager.sessionsFileState(at: writable) == .untrusted)
+
+        let link = directory + "/UserSessions.plist"
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: directory + "/nowhere")
+        #expect(UserManager.sessionsFileState(at: link) == .untrusted)
+    }
+}
