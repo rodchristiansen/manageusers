@@ -45,3 +45,5 @@ DerivedData/
 # Temporary files
 *.tmp
 *.temp
+# Worktrees
+/.worktrees/

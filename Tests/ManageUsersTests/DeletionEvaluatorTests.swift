@@ -175,3 +175,17 @@ struct AccountInspectorParsingTests {
         #expect(AdminGuardSettings.parseList("a, b\nc") == ["a", "b", "c"])
     }
 }
+
+@Suite("Deletion plan")
+struct DeletionPlanTests {
+    @Test("The plan line is one parseable JSON object")
+    func planLine() throws {
+        let line = UserManager.planLine([("s1", "created 40d ago"), ("s2", "last login never")])
+        #expect(line.hasPrefix("MANAGEUSERS_PLAN "))
+        let json = try #require(line.dropFirst("MANAGEUSERS_PLAN ".count).data(using: .utf8))
+        let object = try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+        let accounts = try #require(object["accounts"] as? [[String: String]])
+        #expect(accounts.map { $0["name"] } == ["s1", "s2"])
+        #expect(UserManager.planLine([]) == "MANAGEUSERS_PLAN {\"accounts\":[]}")
+    }
+}

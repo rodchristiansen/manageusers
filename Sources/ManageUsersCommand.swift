@@ -10,6 +10,11 @@ struct UserDeletionConfig {
     let customDays: Int?
     let customExclusionsPlist: String?
     let customStrategy: String?
+    /// Print the accounts a simulation would delete as one JSON line at the end.
+    var printPlan = false
+    /// When set, a live run deletes only these accounts, and only if the rules
+    /// still allow it. Lets a caller confirm exactly what will be deleted.
+    var onlyAccounts: Set<String>? = nil
 }
 
 struct SessionTrackingConfig {
@@ -46,16 +51,24 @@ struct DeleteUsers: AsyncParsableCommand {
     
     @Option(help: "Deletion strategy: login-and-creation, creation-only")
     var strategy: String?
-    
+
+    @Flag(help: "Simulate, then print the accounts that would be deleted as one JSON line prefixed MANAGEUSERS_PLAN")
+    var plan = false
+
+    @Option(name: .customLong("only"), help: "Delete only this account (repeatable); the rules must still allow it")
+    var only: [String] = []
+
     mutating func run() async throws {
-        let config = UserDeletionConfig(
-            simulationMode: simulate || !live,
+        var config = UserDeletionConfig(
+            simulationMode: plan || simulate || !live,
             forceMode: force,
             verboseLogging: verbose,
             customDays: days,
             customExclusionsPlist: exclusionsPlist,
             customStrategy: strategy
         )
+        config.printPlan = plan
+        config.onlyAccounts = only.isEmpty ? nil : Set(only.map { $0.lowercased() })
         
         let manager = UserManager(config: config)
         try await manager.run()

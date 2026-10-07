@@ -46,6 +46,7 @@ class UserManager {
     private var adminVolumeOwners: Set<String> = []
     private var deletedCount = 0
     private var failedCount = 0
+    private var plannedDeletions: [(name: String, reason: String)] = []
     private let preferences: ManageUsersPreferences
 
     init(config: UserDeletionConfig, preferences: ManageUsersPreferences = .system) {
@@ -117,9 +118,19 @@ class UserManager {
         
         await log(.info, "Run summary: \(deletedCount) deleted, \(failedCount) failed\(config.simulationMode ? " (simulation)" : "").")
         await log(.info, "===== ManageUsers completed =====")
+        if config.printPlan {
+            print(Self.planLine(plannedDeletions))
+        }
         if failedCount > 0 { throw UserManagerError.deletionsFailed(failedCount) }
     }
     
+    /// One line a caller can parse: the accounts this simulation would delete.
+    static func planLine(_ planned: [(name: String, reason: String)]) -> String {
+        let accounts = planned.map { ["name": $0.name, "reason": $0.reason] }
+        let data = (try? JSONSerialization.data(withJSONObject: ["accounts": accounts], options: [.sortedKeys])) ?? Data("{\"accounts\":[]}".utf8)
+        return "MANAGEUSERS_PLAN " + (String(data: data, encoding: .utf8) ?? "{\"accounts\":[]}")
+    }
+
     private func log(_ level: LogLevel, _ message: String) async {
         managementLog.write(level, message)
     }
@@ -195,7 +206,11 @@ class UserManager {
     private func decide(_ user: String, lastLogin: Date?, recordedCreation: Date?) -> DeletionDecision {
         let facts = inspector.facts(for: user, lastLogin: lastLogin, recordedCreation: recordedCreation, volumeUsers: volumeUsers)
         let remaining = adminVolumeOwners.subtracting([user]).count
-        return DeletionEvaluator.evaluate(facts, policy: policy, protection: protection, adminVolumeOwnersRemaining: remaining)
+        let decision = DeletionEvaluator.evaluate(facts, policy: policy, protection: protection, adminVolumeOwnersRemaining: remaining)
+        if decision.shouldDelete, let only = config.onlyAccounts, !only.contains(user.lowercased()) {
+            return .keep("not in the confirmed list for this run")
+        }
+        return decision
     }
     
     private func getCurrentConsoleUser() -> String? {
@@ -398,6 +413,7 @@ class UserManager {
     
     private func deleteUser(_ username: String, reason: String) async throws {
         if config.simulationMode {
+            plannedDeletions.append((username, reason))
             await log(.info, "SIMULATION: would delete '\(username)' (\(reason)); nothing was changed.")
             return
         }
