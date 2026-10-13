@@ -354,3 +354,10 @@ private final class FakeAuthorizer: AdminAuthorizing {
         #expect(!partial.isFullyManaged)
     }
 }
+
+@Suite struct RunAuthorizationTests {
+    @Test func onlyTheLiveRunNeedsAnAdministrator() {
+        #expect(RunMode.live.requiresAdmin)
+        #expect(!RunMode.simulate.requiresAdmin)
+    }
+}

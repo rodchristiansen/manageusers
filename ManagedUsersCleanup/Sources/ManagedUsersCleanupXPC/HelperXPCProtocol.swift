@@ -99,9 +99,15 @@ public enum RunMode: String, CaseIterable, Identifiable, Sendable {
         case .simulate:
             "Shows which accounts the cleanup rules would delete. Nothing is changed."
         case .live:
-            "Runs a simulation, asks you to confirm the accounts it lists, then deletes only those. Admins and excluded accounts are never deleted."
+            "Runs a simulation, asks you to confirm the accounts it lists, then deletes only those once an administrator authenticates. Admins and excluded accounts are never deleted."
         }
     }
+
+    /// True for a run that changes the Mac. The helper requires an
+    /// administrator's authorization for it, deciding from the mode itself;
+    /// a simulation, which reads the saved settings and deletes nothing,
+    /// stays open to standard users.
+    public var requiresAdmin: Bool { self == .live }
 
     /// The tool arguments for a mode. A live run is limited to the confirmed
     /// accounts, each re-checked against the rules by the tool itself.
@@ -174,7 +180,10 @@ public enum UsersPreferenceKey: String, CaseIterable, Sendable {
 @objc public protocol HelperXPCProtocol: Sendable {
     /// Run manageusers in the named mode. For `live`, `accounts` is the list the
     /// user confirmed; it is ignored for `simulate`. Output streams back.
-    func run(mode: String, accounts: [String])
+    /// `authorization` is an AuthorizationExternalForm holding
+    /// `CleanupConstants.adminRight`, required for a mode whose
+    /// `requiresAdmin` is true and empty otherwise.
+    func run(mode: String, accounts: [String], authorization: Data)
 
     /// Stop the run in progress.
     func stop()
@@ -219,7 +228,7 @@ public extension NSXPCInterface {
         )
         interface.setClasses(
             classes,
-            for: #selector(HelperXPCProtocol.run(mode:accounts:)),
+            for: #selector(HelperXPCProtocol.run(mode:accounts:authorization:)),
             argumentIndex: 1,
             ofReply: false
         )

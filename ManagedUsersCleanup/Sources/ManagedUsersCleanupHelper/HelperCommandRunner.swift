@@ -53,7 +53,7 @@ final class HelperCommandRunner: NSObject, HelperXPCProtocol, @unchecked Sendabl
 
     // MARK: - Runs
 
-    func run(mode: String, accounts: [String]) {
+    func run(mode: String, accounts: [String], authorization: Data) {
         let clientProxy = connection.remoteObjectProxy as? HelperXPCClientProtocol
 
         guard let runMode = RunMode(rawValue: mode),
@@ -61,6 +61,13 @@ final class HelperCommandRunner: NSObject, HelperXPCProtocol, @unchecked Sendabl
             clientProxy?.didEncounterError(mode == RunMode.live.rawValue
                 ? "A live cleanup needs a confirmed list of valid account names."
                 : "Unknown run mode: \(mode)")
+            clientProxy?.runDidComplete(success: false, exitCode: -1)
+            return
+        }
+        // Decided from the mode, never from anything the client claims: a
+        // live run deletes accounts, so it needs an administrator.
+        if runMode.requiresAdmin && !Self.isAdminAuthorized(authorization) {
+            clientProxy?.didEncounterError("A live cleanup needs an administrator's authorization.")
             clientProxy?.runDidComplete(success: false, exitCode: -1)
             return
         }

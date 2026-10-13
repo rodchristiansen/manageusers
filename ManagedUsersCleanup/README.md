@@ -15,8 +15,11 @@ The window and its helper need macOS 14 or later.
   setting but change none. When a profile sets every key the tab is read-only.
 - **Run** offers two runs. *Simulate* lists the accounts the rules would delete
   and changes nothing. *Live cleanup* runs a simulation first, shows the accounts
-  in a confirmation sheet, and deletes only the accounts confirmed there, each
-  re-checked against the rules by the tool (`manageusers delete --live --only …`).
+  in a confirmation sheet, asks for an administrator name and password, and
+  deletes only the accounts confirmed there, each re-checked against the rules
+  by the tool (`manageusers delete --live --only …`). Both runs use the saved
+  settings, never unsaved edits in Prefs, and a standard user can run only
+  *Simulate*.
 - **Logs** lists the day logs under `/Library/Managed Users/logs`, newest first.
 
 ## Privileged helper
@@ -27,7 +30,9 @@ connects and installing the package runs nothing. It
 accepts connections only from `com.github.manageusers.gui` signed by its own Team
 ID, runs `/usr/local/manageusers/manageusers` (never the PATH symlink) with fixed
 arguments (never a command line from the caller, and account names only from a
-strict character set), writes only the five keys above and only with an
+strict character set), refuses a live run unless it carries an administrator's authorization (decided
+from the mode, not from anything the window claims), writes only the five keys
+above and only with an
 authorization reference that already holds `system.privilege.admin` (the window
 obtains it from the administrator prompt at Save and destroys it afterwards; the
 helper itself never prompts), and refuses the tool when
