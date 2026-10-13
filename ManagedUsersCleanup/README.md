@@ -9,7 +9,10 @@ The window and its helper need macOS 14 or later.
 - **Prefs** edits `/Library/Preferences/com.github.manageusers.plist`: the deletion
   threshold and strategy, extra exclusions, and the admin protection
   (`DeleteAdmins`, `DeletableAdmins`). A key a configuration profile manages
-  shows the profile's value, locked, and is never written.
+  shows the profile's value in gray and is never written; only MDM changes it.
+  Any other key is editable, and **Save** asks for an administrator name and
+  password before the helper writes it, so a standard user can read every
+  setting but change none. When a profile sets every key the tab is read-only.
 - **Run** offers two runs. *Simulate* lists the accounts the rules would delete
   and changes nothing. *Live cleanup* runs a simulation first, shows the accounts
   in a confirmation sheet, and deletes only the accounts confirmed there, each
@@ -24,7 +27,10 @@ connects and installing the package runs nothing. It
 accepts connections only from `com.github.manageusers.gui` signed by its own Team
 ID, runs `/usr/local/manageusers/manageusers` (never the PATH symlink) with fixed
 arguments (never a command line from the caller, and account names only from a
-strict character set), writes only the five keys above, and refuses the tool when
+strict character set), writes only the five keys above and only with an
+authorization reference that already holds `system.privilege.admin` (the window
+obtains it from the administrator prompt at Save and destroys it afterwards; the
+helper itself never prompts), and refuses the tool when
 it, `/usr/local/manageusers` or any folder above is a link or writable by anyone
 but root.
 An unsigned build therefore refuses every client.

@@ -25,6 +25,10 @@ public enum CleanupConstants {
     public static let logsDirectory = "/Library/Managed Users/logs"
     /// The prefix of the line `manageusers delete --plan` prints last.
     public static let planPrefix = "MANAGEUSERS_PLAN "
+    /// The authorization right an administrator must hold before the helper
+    /// writes a preference. The window asks for it when Save is clicked; a
+    /// standard user can read every setting but never change one.
+    public static let adminRight = "system.privilege.admin"
     /// Account names are short POSIX names; anything else is refused before it
     /// reaches the tool.
     public static func isValidAccountName(_ name: String) -> Bool {
@@ -176,11 +180,14 @@ public enum UsersPreferenceKey: String, CaseIterable, Sendable {
     func stop()
 
     /// Write a preference to /Library/Preferences/com.github.manageusers.plist.
-    func setBoolPreference(key: String, value: Bool, withReply reply: @escaping (Bool) -> Void)
-    func setIntPreference(key: String, value: Int, withReply reply: @escaping (Bool) -> Void)
-    func setStringPreference(key: String, value: String, withReply reply: @escaping (Bool) -> Void)
-    func setArrayPreference(key: String, value: [String], withReply reply: @escaping (Bool) -> Void)
-    func removePreference(key: String, withReply reply: @escaping (Bool) -> Void)
+    /// `authorization` is an AuthorizationExternalForm the GUI obtained from an
+    /// administrator; the helper refuses the write unless it holds
+    /// `CleanupConstants.adminRight`.
+    func setBoolPreference(key: String, value: Bool, authorization: Data, withReply reply: @escaping (Bool) -> Void)
+    func setIntPreference(key: String, value: Int, authorization: Data, withReply reply: @escaping (Bool) -> Void)
+    func setStringPreference(key: String, value: String, authorization: Data, withReply reply: @escaping (Bool) -> Void)
+    func setArrayPreference(key: String, value: [String], authorization: Data, withReply reply: @escaping (Bool) -> Void)
+    func removePreference(key: String, authorization: Data, withReply reply: @escaping (Bool) -> Void)
 
     /// The helper's version, to confirm it is alive.
     func getHelperVersion(withReply reply: @escaping (String) -> Void)
@@ -206,7 +213,7 @@ public extension NSXPCInterface {
         let classes = NSSet(array: [NSArray.self, NSString.self]) as! Set<AnyHashable>
         interface.setClasses(
             classes,
-            for: #selector(HelperXPCProtocol.setArrayPreference(key:value:withReply:)),
+            for: #selector(HelperXPCProtocol.setArrayPreference(key:value:authorization:withReply:)),
             argumentIndex: 1,
             ofReply: false
         )

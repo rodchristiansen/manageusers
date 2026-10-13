@@ -5,7 +5,10 @@
 //  Prefs tab: centred app header, then manageusers' preferences in two columns
 //  of cards, then a read-only list of the tool's launchd jobs. Settings a
 //  profile manages show their managed value, disabled (gray); one banner
-//  under the header explains why, instead of a caption on every field.
+//  under the header explains why, instead of a caption on every field, and
+//  only MDM can change them. Every other setting is editable; Save asks for an
+//  administrator before the helper writes it. When a profile sets every
+//  setting the window is read-only and offers no Save.
 //
 
 import SwiftUI
@@ -56,9 +59,12 @@ struct SettingsView: View {
                     ]
                 )
 
-                HStack {
+                HStack(spacing: 12) {
                     Spacer()
                     saveStatusLabel
+                    if !viewModel.isFullyManaged {
+                        saveButtons
+                    }
                 }
                 .padding(.top, 4)
             }
@@ -98,7 +104,26 @@ struct SettingsView: View {
         .padding(.top, 8)
     }
 
-    // MARK: - Auto-Save Status
+    // MARK: - Save
+
+    @ViewBuilder
+    private var saveButtons: some View {
+        Button("Revert") {
+            viewModel.revert()
+        }
+        .disabled(!viewModel.hasUnsavedChanges || viewModel.saveStatus == .saving)
+        .help("Discard the changes you have not saved")
+
+        Button("Save") {
+            Task { await viewModel.save() }
+        }
+        .keyboardShortcut("s", modifiers: .command)
+        .buttonStyle(.borderedProminent)
+        .disabled(!viewModel.hasUnsavedChanges || viewModel.saveStatus == .saving)
+        .help("An administrator name and password is needed to save")
+    }
+
+    // MARK: - Save Status
 
     @ViewBuilder
     private var saveStatusLabel: some View {
@@ -160,8 +185,9 @@ struct SettingsView: View {
 
     /// The exclude list as a native list: select rows and press Delete (or
     /// the minus button) to remove them; type a name and press Return (or
-    /// Add) to add one. Edits auto-save through the helper like every other
-    /// field; when a profile sets the list it is shown gray and read-only.
+    /// Add) to add one. Edits are saved with Save, after an administrator
+    /// authenticates, like every other field; when a profile sets the list it
+    /// is shown gray and read-only.
     @ViewBuilder
     private var exclusionListEditor: some View {
         let trimmed = newExclusion.trimmingCharacters(in: .whitespacesAndNewlines)

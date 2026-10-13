@@ -3,8 +3,9 @@
 //  Managed Users Cleanup
 //
 //  manageusers' preferences for the Prefs tab. Values are read the way the
-//  root tool reads them; keys a profile manages are shown locked and never
-//  written. Edits auto-save through the privileged helper.
+//  root tool reads them; keys a profile manages are shown gray and never
+//  written. Other edits are held in the window until Save, which asks for an
+//  administrator and then writes them through the privileged helper.
 //
 
 import Foundation
@@ -52,12 +53,12 @@ final class SettingsViewModel {
 
     // MARK: - Values
 
-    var deletionDays = 0 { didSet { scheduleAutoSave() } }
-    var strategy: StrategyChoice = .areaDefault { didSet { scheduleAutoSave() } }
+    var deletionDays = 0
+    var strategy: StrategyChoice = .areaDefault
     /// Accounts never deleted, edited as a list.
-    var additionalExclusions: [String] = [] { didSet { scheduleAutoSave() } }
-    var deleteAdmins = false { didSet { scheduleAutoSave() } }
-    var deletableAdminsText = "" { didSet { scheduleAutoSave() } }
+    var additionalExclusions: [String] = []
+    var deleteAdmins = false
+    var deletableAdminsText = ""
 
     private(set) var managedKeys: Set<String> = []
 
@@ -68,31 +69,34 @@ final class SettingsViewModel {
     }
     private(set) var saveStatus: SaveStatus = .idle
 
-    // MARK: - Auto-Save
+    // MARK: - Saving
 
     private let source: PreferenceSource
-    private var xpcClient: XPCClient?
-    private var autoSaveTask: Task<Void, Never>?
-    private var isLoading = false
+    private let authorizer: AdminAuthorizing
+    private weak var writer: PreferenceWriting?
     private var saved = PreferenceSnapshot()
 
-    init(source: PreferenceSource = SystemPreferenceSource()) {
+    init(source: PreferenceSource = SystemPreferenceSource(), authorizer: AdminAuthorizing = AdminAuthorization()) {
         self.source = source
+        self.authorizer = authorizer
     }
 
-    func configure(client: XPCClient) {
-        xpcClient = client
+    func configure(client: PreferenceWriting) {
+        writer = client
     }
 
-    private func scheduleAutoSave() {
-        guard !isLoading, xpcClient != nil else { return }
-        autoSaveTask?.cancel()
-        autoSaveTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(0.75))
-            guard !Task.isCancelled, let self else { return }
-            await self.save()
-        }
+    /// True when every key the window edits is set by a profile, so the
+    /// window is read-only and offers no Save.
+    var isFullyManaged: Bool {
+        UsersPreferenceKey.allCases.allSatisfy { managedKeys.contains($0.rawValue) }
     }
+
+    /// The writes Save would perform: edits to keys no profile manages.
+    var pendingWrites: [PreferenceWrite] {
+        Self.writes(from: saved, to: current, managed: managedKeys)
+    }
+
+    var hasUnsavedChanges: Bool { !pendingWrites.isEmpty }
 
     /// True when a profile forces at least one of manageusers' keys.
     var hasManagedSettings: Bool { !managedKeys.isEmpty }
@@ -104,13 +108,16 @@ final class SettingsViewModel {
     // MARK: - Load
 
     func load() {
-        isLoading = true
-        defer { isLoading = false }
-
         managedKeys = Set(UsersPreferenceKey.allCases.map(\.rawValue).filter(source.isManaged))
         let snapshot = Self.read(from: source)
         apply(snapshot)
         saved = snapshot
+    }
+
+    /// Puts every field back to the stored value, discarding unsaved edits.
+    func revert() {
+        apply(saved)
+        if case .failed = saveStatus { saveStatus = .idle }
     }
 
     /// Reads each value with the meaning the tool gives it.
@@ -219,34 +226,56 @@ final class SettingsViewModel {
         return writes
     }
 
+    /// Asks for an administrator, then writes the pending edits through the
+    /// helper with that one authorization. Cancelling the prompt leaves the
+    /// edits in place, unsaved, without an error.
     func save() async {
-        guard let client = xpcClient else { return }
+        guard let writer else { return }
         let target = current
         let pending = Self.writes(from: saved, to: target, managed: managedKeys)
         guard !pending.isEmpty else { return }
 
+        guard let grant = authorizer.authorize() else { return }
+        defer { grant.release() }
+
         saveStatus = .saving
         var failed: [String] = []
+        var applied = saved
         for write in pending {
-            let ok: Bool
-            let key: UsersPreferenceKey
-            switch write {
-            case .bool(let k, let value): key = k; ok = await client.setBoolPreference(key: k, value: value)
-            case .int(let k, let value): key = k; ok = await client.setIntPreference(key: k, value: value)
-            case .string(let k, let value): key = k; ok = await client.setStringPreference(key: k, value: value)
-            case .array(let k, let value): key = k; ok = await client.setArrayPreference(key: k, value: value)
-            case .remove(let k): key = k; ok = await client.removePreference(key: k)
+            if await writer.perform(write, authorization: grant.externalForm) {
+                Self.record(write, from: target, into: &applied)
+            } else {
+                failed.append(write.key.rawValue)
             }
-            if !ok { failed.append(key.rawValue) }
         }
+        saved = applied
 
         if failed.isEmpty {
-            saved = target
             saveStatus = .saved
             try? await Task.sleep(for: .seconds(2.5))
             if saveStatus == .saved { saveStatus = .idle }
         } else {
-            saveStatus = .failed("Could not save \(failed.joined(separator: ", ")): the helper is not available")
+            saveStatus = .failed("Could not save \(failed.joined(separator: ", ")): the helper refused or is not available")
+        }
+    }
+
+    /// Copies the one value a successful write stored from `target` into
+    /// `snapshot`, so a failed write stays pending for the next Save.
+    private static func record(_ write: PreferenceWrite, from target: PreferenceSnapshot, into snapshot: inout PreferenceSnapshot) {
+        switch write.key {
+        case .deletionDays: snapshot.deletionDays = target.deletionDays
+        case .deletionStrategy: snapshot.strategy = target.strategy
+        case .additionalExclusions: snapshot.additionalExclusions = target.additionalExclusions
+        case .deleteAdmins: snapshot.deleteAdmins = target.deleteAdmins
+        case .deletableAdmins: snapshot.deletableAdmins = target.deletableAdmins
+        }
+    }
+}
+
+extension PreferenceWrite {
+    var key: UsersPreferenceKey {
+        switch self {
+        case .bool(let key, _), .int(let key, _), .string(let key, _), .array(let key, _), .remove(let key): key
         }
     }
 }

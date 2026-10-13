@@ -245,3 +245,112 @@ struct ManagedPreferencesFileTests {
         #expect(!UsersPreferenceKey.managedFileSetsKey("DeletionDays", path: path + ".missing"))
     }
 }
+
+// MARK: - Save asks for an administrator
+
+@MainActor
+private final class FakeWriter: PreferenceWriting {
+    var performed: [(PreferenceWrite, Data)] = []
+    var refuse: Set<String> = []
+    func perform(_ write: PreferenceWrite, authorization: Data) async -> Bool {
+        performed.append((write, authorization))
+        return !refuse.contains(write.key.rawValue)
+    }
+}
+
+@MainActor
+private final class FakeAuthorizer: AdminAuthorizing {
+    var grant: Bool
+    var prompts = 0
+    init(grant: Bool) { self.grant = grant }
+    func authorize() -> AdminGrant? {
+        prompts += 1
+        return grant ? AdminGrant(authRef: nil, externalForm: Data([1, 2, 3])) : nil
+    }
+}
+
+@Suite @MainActor struct SaveTests {
+    private func model(values: [String: Any] = [:], managed: Set<String> = [], grant: Bool = true)
+        -> (SettingsViewModel, FakeWriter, FakeAuthorizer) {
+        let authorizer = FakeAuthorizer(grant: grant)
+        let writer = FakeWriter()
+        let model = SettingsViewModel(source: FakeSource(values: values, managed: managed), authorizer: authorizer)
+        model.configure(client: writer)
+        model.load()
+        return (model, writer, authorizer)
+    }
+
+    @Test func editsAreHeldUntilSaveAndRevertDiscardsThem() {
+        let (model, writer, authorizer) = model(values: ["DeletionDays": 30])
+        #expect(!model.hasUnsavedChanges)
+        model.deletionDays = 60
+        model.addExclusions(from: "kiosk")
+        #expect(model.hasUnsavedChanges)
+        #expect(writer.performed.isEmpty)
+        #expect(authorizer.prompts == 0)
+        model.revert()
+        #expect(!model.hasUnsavedChanges)
+        #expect(model.deletionDays == 30)
+        #expect(model.additionalExclusions.isEmpty)
+    }
+
+    @Test func saveWritesEveryEditWithOneAuthorization() async {
+        let (model, writer, authorizer) = model()
+        model.deleteAdmins = true
+        model.addExclusions(from: "kiosk support")
+        await model.save()
+        #expect(authorizer.prompts == 1)
+        #expect(writer.performed.map(\.0) == [
+            .array(.additionalExclusions, ["kiosk", "support"]),
+            .bool(.deleteAdmins, true)
+        ])
+        #expect(writer.performed.allSatisfy { $0.1 == Data([1, 2, 3]) })
+        #expect(!model.hasUnsavedChanges)
+    }
+
+    @Test func cancellingThePromptWritesNothingAndKeepsTheEdits() async {
+        let (model, writer, authorizer) = model(grant: false)
+        model.deletionDays = 14
+        await model.save()
+        #expect(authorizer.prompts == 1)
+        #expect(writer.performed.isEmpty)
+        #expect(model.hasUnsavedChanges)
+        #expect(model.saveStatus == .idle)
+    }
+
+    @Test func noChangesMeansNoPrompt() async {
+        let (model, _, authorizer) = model()
+        await model.save()
+        #expect(authorizer.prompts == 0)
+    }
+
+    @Test func managedKeysAreNeverPendingOrWritten() async {
+        let (model, writer, _) = model(
+            values: ["AdditionalExclusions": ["kiosk"], "DeletionDays": 30],
+            managed: ["AdditionalExclusions", "DeletionDays"]
+        )
+        model.deletionDays = 90
+        model.additionalExclusions = ["kiosk", "other"]
+        #expect(!model.hasUnsavedChanges)
+        model.deleteAdmins = true
+        await model.save()
+        #expect(writer.performed.map(\.0) == [.bool(.deleteAdmins, true)])
+    }
+
+    @Test func aRefusedWriteStaysPending() async {
+        let (model, writer, _) = model()
+        writer.refuse = ["DeleteAdmins"]
+        model.deleteAdmins = true
+        model.deletionDays = 10
+        await model.save()
+        #expect(model.pendingWrites == [.bool(.deleteAdmins, true)])
+        if case .failed = model.saveStatus {} else { Issue.record("expected a failed status") }
+    }
+
+    @Test func fullyManagedWindowOffersNoSave() {
+        let (full, _, _) = model(managed: Set(UsersPreferenceKey.allCases.map(\.rawValue)))
+        #expect(full.isFullyManaged)
+        let (partial, _, _) = model(managed: ["DeletionDays"])
+        #expect(!partial.isFullyManaged)
+    }
+}

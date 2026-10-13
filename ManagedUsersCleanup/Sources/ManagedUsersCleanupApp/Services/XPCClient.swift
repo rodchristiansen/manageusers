@@ -109,25 +109,28 @@ final class XPCClient: NSObject {
     }
 
     // MARK: - Preference Management
+    //
+    // Every write carries the external form of an administrator's
+    // authorization; the helper refuses a write without one.
 
-    func setStringPreference(key: UsersPreferenceKey, value: String) async -> Bool {
-        await callHelper { proxy, reply in proxy.setStringPreference(key: key.rawValue, value: value, withReply: reply) }
+    func setStringPreference(key: UsersPreferenceKey, value: String, authorization: Data) async -> Bool {
+        await callHelper { proxy, reply in proxy.setStringPreference(key: key.rawValue, value: value, authorization: authorization, withReply: reply) }
     }
 
-    func setBoolPreference(key: UsersPreferenceKey, value: Bool) async -> Bool {
-        await callHelper { proxy, reply in proxy.setBoolPreference(key: key.rawValue, value: value, withReply: reply) }
+    func setBoolPreference(key: UsersPreferenceKey, value: Bool, authorization: Data) async -> Bool {
+        await callHelper { proxy, reply in proxy.setBoolPreference(key: key.rawValue, value: value, authorization: authorization, withReply: reply) }
     }
 
-    func setIntPreference(key: UsersPreferenceKey, value: Int) async -> Bool {
-        await callHelper { proxy, reply in proxy.setIntPreference(key: key.rawValue, value: value, withReply: reply) }
+    func setIntPreference(key: UsersPreferenceKey, value: Int, authorization: Data) async -> Bool {
+        await callHelper { proxy, reply in proxy.setIntPreference(key: key.rawValue, value: value, authorization: authorization, withReply: reply) }
     }
 
-    func setArrayPreference(key: UsersPreferenceKey, value: [String]) async -> Bool {
-        await callHelper { proxy, reply in proxy.setArrayPreference(key: key.rawValue, value: value, withReply: reply) }
+    func setArrayPreference(key: UsersPreferenceKey, value: [String], authorization: Data) async -> Bool {
+        await callHelper { proxy, reply in proxy.setArrayPreference(key: key.rawValue, value: value, authorization: authorization, withReply: reply) }
     }
 
-    func removePreference(key: UsersPreferenceKey) async -> Bool {
-        await callHelper { proxy, reply in proxy.removePreference(key: key.rawValue, withReply: reply) }
+    func removePreference(key: UsersPreferenceKey, authorization: Data) async -> Bool {
+        await callHelper { proxy, reply in proxy.removePreference(key: key.rawValue, authorization: authorization, withReply: reply) }
     }
 
     // MARK: - Private
@@ -250,6 +253,20 @@ extension XPCClient: HelperXPCClientProtocol {
         Task { @MainActor in
             connectionError = message
             outputLines.append(OutputLine(text: "ERROR: \(message)", level: .error))
+        }
+    }
+}
+
+// MARK: - PreferenceWriting
+
+extension XPCClient: PreferenceWriting {
+    func perform(_ write: PreferenceWrite, authorization: Data) async -> Bool {
+        switch write {
+        case .bool(let key, let value): await setBoolPreference(key: key, value: value, authorization: authorization)
+        case .int(let key, let value): await setIntPreference(key: key, value: value, authorization: authorization)
+        case .string(let key, let value): await setStringPreference(key: key, value: value, authorization: authorization)
+        case .array(let key, let value): await setArrayPreference(key: key, value: value, authorization: authorization)
+        case .remove(let key): await removePreference(key: key, authorization: authorization)
         }
     }
 }
