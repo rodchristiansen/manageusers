@@ -60,6 +60,14 @@ struct SettingsView: View {
                 )
 
                 HStack(spacing: 12) {
+                    Text("v\(marketingVersion) (\(buildNumber))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Link("Documentation", destination: URL(string: "https://github.com/rodchristiansen/manageusers#readme")!)
+                        .font(.caption)
+                    Link("Report Issue", destination: URL(string: "https://github.com/rodchristiansen/manageusers/issues")!)
+                        .font(.caption)
                     Spacer()
                     saveStatusLabel
                     if !viewModel.isFullyManaged {
@@ -73,6 +81,12 @@ struct SettingsView: View {
         .onAppear {
             viewModel.configure(client: xpcClient)
             viewModel.load()
+            // AppKit hands first responder to the first focusable control when
+            // the window opens, drawing a focus ring nobody asked for. Clear it
+            // once the window is up; Tab still reaches every control.
+            DispatchQueue.main.async {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            }
         }
     }
 
@@ -94,12 +108,6 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            HStack(spacing: 16) {
-                Link("Documentation", destination: URL(string: "https://github.com/rodchristiansen/manageusers#readme")!)
-                    .font(.caption)
-                Link("Report Issue", destination: URL(string: "https://github.com/rodchristiansen/manageusers/issues")!)
-                    .font(.caption)
-            }
         }
         .padding(.top, 8)
     }
