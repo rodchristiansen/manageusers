@@ -3,7 +3,9 @@
 //  Managed Users Cleanup
 //
 //  Prefs tab: centred app header, then manageusers' preferences in two columns
-//  of cards. Managed settings show their managed value, locked.
+//  of cards, then a read-only list of the tool's launchd jobs. Settings a
+//  profile manages show their managed value, disabled (gray); one banner
+//  under the header explains why, instead of a caption on every field.
 //
 
 import SwiftUI
@@ -12,6 +14,8 @@ import ManagedUsersCleanupXPC
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Environment(XPCClient.self) private var xpcClient
+    @State private var exclusionSelection: Set<String> = []
+    @State private var newExclusion = ""
 
     private var marketingVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–"
@@ -25,6 +29,10 @@ struct SettingsView: View {
         ScrollView {
             VStack(spacing: 16) {
                 appInfoHeader
+
+                if viewModel.hasManagedSettings {
+                    ProfileManagedBanner()
+                }
 
                 Divider()
 
@@ -40,6 +48,13 @@ struct SettingsView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .top)
                 }
+
+                ServicesSection(
+                    prefixes: ["com.github.manageusers"],
+                    extraDaemonDirectories: [
+                        Bundle.main.bundleURL.appendingPathComponent("Contents/Library/LaunchDaemons").path
+                    ]
+                )
 
                 HStack {
                     Spacer()
@@ -135,13 +150,76 @@ struct SettingsView: View {
     private var exclusionsSection: some View {
         card("Exclusions", systemImage: "person.crop.circle.badge.checkmark") {
             settingRow(.additionalExclusions, label: "Never delete") {
-                TextField("support, kiosk", text: $viewModel.additionalExclusionsText)
-                    .textFieldStyle(.roundedBorder)
+                exclusionListEditor
             }
             Text("Added to the built-in list and the exclusions in the sessions file.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// The exclude list as a native list: select rows and press Delete (or
+    /// the minus button) to remove them; type a name and press Return (or
+    /// Add) to add one. Edits auto-save through the helper like every other
+    /// field; when a profile sets the list it is shown gray and read-only.
+    @ViewBuilder
+    private var exclusionListEditor: some View {
+        let trimmed = newExclusion.trimmingCharacters(in: .whitespacesAndNewlines)
+        VStack(alignment: .leading, spacing: 6) {
+            List(selection: $exclusionSelection) {
+                ForEach(viewModel.additionalExclusions, id: \.self) { name in
+                    Text(name)
+                        .tag(name)
+                }
+            }
+            .listStyle(.bordered(alternatesRowBackgrounds: true))
+            .frame(minHeight: 96, maxHeight: 160)
+            .overlay {
+                if viewModel.additionalExclusions.isEmpty {
+                    Text("No accounts added")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onDeleteCommand(perform: removeSelectedExclusions)
+            .copyable(viewModel.additionalExclusions.filter { exclusionSelection.contains($0) })
+            .contextMenu(forSelectionType: String.self) { names in
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(viewModel.additionalExclusions.filter { names.contains($0) }.joined(separator: "\n"), forType: .string)
+                }
+                .disabled(names.isEmpty)
+                Button("Remove") {
+                    viewModel.removeExclusions(names)
+                    exclusionSelection.subtract(names)
+                }
+                .disabled(names.isEmpty)
+            }
+            .accessibilityLabel("Accounts never deleted")
+
+            HStack(spacing: 6) {
+                TextField("Account name", text: $newExclusion)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(addExclusion)
+                Button("Add", action: addExclusion)
+                    .disabled(trimmed.isEmpty)
+                Button(action: removeSelectedExclusions) {
+                    Image(systemName: "minus")
+                }
+                .help("Remove the selected accounts")
+                .accessibilityLabel("Remove selected accounts")
+                .disabled(exclusionSelection.isEmpty)
+            }
+        }
+    }
+
+    private func addExclusion() {
+        viewModel.addExclusions(from: newExclusion)
+        newExclusion = ""
+    }
+
+    private func removeSelectedExclusions() {
+        viewModel.removeExclusions(exclusionSelection)
+        exclusionSelection.removeAll()
     }
 
     @ViewBuilder
@@ -210,11 +288,6 @@ struct SettingsView: View {
             }
             content()
                 .disabled(managed)
-            if managed {
-                Label("Managed", systemImage: "lock.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 }
