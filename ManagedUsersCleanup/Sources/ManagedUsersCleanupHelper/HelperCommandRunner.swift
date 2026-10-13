@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Security
 import ManagedUsersCleanupXPC
 
 final class HelperCommandRunner: NSObject, HelperXPCProtocol, @unchecked Sendable {
@@ -23,9 +24,36 @@ final class HelperCommandRunner: NSObject, HelperXPCProtocol, @unchecked Sendabl
         self.connection = connection
     }
 
+    // MARK: - Authorization
+
+    /// True when `externalForm` is an authorization reference that already
+    /// holds the admin right. The helper never prompts: the GUI asked the
+    /// administrator, and this only confirms the credential it was given.
+    static func isAdminAuthorized(_ externalForm: Data) -> Bool {
+        guard externalForm.count == MemoryLayout<AuthorizationExternalForm>.size else { return false }
+        var form = AuthorizationExternalForm()
+        withUnsafeMutableBytes(of: &form) { buffer in
+            _ = externalForm.copyBytes(to: buffer)
+        }
+        var authRef: AuthorizationRef?
+        guard AuthorizationCreateFromExternalForm(&form, &authRef) == errAuthorizationSuccess, let authRef else {
+            return false
+        }
+        defer { AuthorizationFree(authRef, []) }
+
+        return CleanupConstants.adminRight.withCString { name in
+            var item = AuthorizationItem(name: name, valueLength: 0, value: nil, flags: 0)
+            return withUnsafeMutablePointer(to: &item) { itemPointer in
+                var rights = AuthorizationRights(count: 1, items: itemPointer)
+                let status = AuthorizationCopyRights(authRef, &rights, nil, [.extendRights], nil)
+                return status == errAuthorizationSuccess
+            }
+        }
+    }
+
     // MARK: - Runs
 
-    func run(mode: String, accounts: [String]) {
+    func run(mode: String, accounts: [String], authorization: Data) {
         let clientProxy = connection.remoteObjectProxy as? HelperXPCClientProtocol
 
         guard let runMode = RunMode(rawValue: mode),
@@ -33,6 +61,13 @@ final class HelperCommandRunner: NSObject, HelperXPCProtocol, @unchecked Sendabl
             clientProxy?.didEncounterError(mode == RunMode.live.rawValue
                 ? "A live cleanup needs a confirmed list of valid account names."
                 : "Unknown run mode: \(mode)")
+            clientProxy?.runDidComplete(success: false, exitCode: -1)
+            return
+        }
+        // Decided from the mode, never from anything the client claims: a
+        // live run deletes accounts, so it needs an administrator.
+        if runMode.requiresAdmin && !Self.isAdminAuthorized(authorization) {
+            clientProxy?.didEncounterError("A live cleanup needs an administrator's authorization.")
             clientProxy?.runDidComplete(success: false, exitCode: -1)
             return
         }
@@ -112,39 +147,45 @@ final class HelperCommandRunner: NSObject, HelperXPCProtocol, @unchecked Sendabl
     //
     // Writes land in /Library/Preferences/com.github.manageusers.plist
     // (any user, any host), the file the root tool reads below a profile. The
-    // domain is fixed and only the keys the window edits are accepted.
+    // domain is fixed, only the keys the window edits are accepted, and every
+    // write needs an authorization reference holding the admin right.
 
-    func setBoolPreference(key: String, value: Bool, withReply reply: @escaping (Bool) -> Void) {
-        write(key: key, value: value as CFBoolean, reply: reply)
+    func setBoolPreference(key: String, value: Bool, authorization: Data, withReply reply: @escaping (Bool) -> Void) {
+        write(key: key, value: value as CFBoolean, authorization: authorization, reply: reply)
     }
 
-    func setIntPreference(key: String, value: Int, withReply reply: @escaping (Bool) -> Void) {
-        write(key: key, value: value as CFNumber, reply: reply)
+    func setIntPreference(key: String, value: Int, authorization: Data, withReply reply: @escaping (Bool) -> Void) {
+        write(key: key, value: value as CFNumber, authorization: authorization, reply: reply)
     }
 
-    func setStringPreference(key: String, value: String, withReply reply: @escaping (Bool) -> Void) {
+    func setStringPreference(key: String, value: String, authorization: Data, withReply reply: @escaping (Bool) -> Void) {
         guard key != UsersPreferenceKey.deletionStrategy.rawValue
                 || ["login-and-creation", "creation-only"].contains(value) else {
             reply(false)
             return
         }
-        write(key: key, value: value as CFString, reply: reply)
+        write(key: key, value: value as CFString, authorization: authorization, reply: reply)
     }
 
-    func setArrayPreference(key: String, value: [String], withReply reply: @escaping (Bool) -> Void) {
-        write(key: key, value: value as CFArray, reply: reply)
+    func setArrayPreference(key: String, value: [String], authorization: Data, withReply reply: @escaping (Bool) -> Void) {
+        write(key: key, value: value as CFArray, authorization: authorization, reply: reply)
     }
 
-    func removePreference(key: String, withReply reply: @escaping (Bool) -> Void) {
-        write(key: key, value: nil, reply: reply)
+    func removePreference(key: String, authorization: Data, withReply reply: @escaping (Bool) -> Void) {
+        write(key: key, value: nil, authorization: authorization, reply: reply)
     }
 
-    private func write(key: String, value: CFPropertyList?, reply: @escaping (Bool) -> Void) {
+    private func write(key: String, value: CFPropertyList?, authorization: Data, reply: @escaping (Bool) -> Void) {
         let domain = Self.domain
         let managedPath = "/Library/Managed Preferences/\(CleanupConstants.preferenceDomain).plist"
         let isForced: (String) -> Bool = {
             CFPreferencesAppValueIsForced($0 as CFString, domain)
                 || UsersPreferenceKey.managedFileSetsKey($0, path: managedPath)
+        }
+        guard Self.isAdminAuthorized(authorization) else {
+            NSLog("Managed Users Cleanup helper refused a write to %@ without administrator authorization", key)
+            reply(false)
+            return
         }
         guard UsersPreferenceKey.isWritable(key, isForced: isForced) else {
             NSLog("Managed Users Cleanup helper refused a write to %@", key)

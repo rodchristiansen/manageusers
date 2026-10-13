@@ -25,6 +25,10 @@ public enum CleanupConstants {
     public static let logsDirectory = "/Library/Managed Users/logs"
     /// The prefix of the line `manageusers delete --plan` prints last.
     public static let planPrefix = "MANAGEUSERS_PLAN "
+    /// The authorization right an administrator must hold before the helper
+    /// writes a preference. The window asks for it when Save is clicked; a
+    /// standard user can read every setting but never change one.
+    public static let adminRight = "system.privilege.admin"
     /// Account names are short POSIX names; anything else is refused before it
     /// reaches the tool.
     public static func isValidAccountName(_ name: String) -> Bool {
@@ -95,9 +99,15 @@ public enum RunMode: String, CaseIterable, Identifiable, Sendable {
         case .simulate:
             "Shows which accounts the cleanup rules would delete. Nothing is changed."
         case .live:
-            "Runs a simulation, asks you to confirm the accounts it lists, then deletes only those. Admins and excluded accounts are never deleted."
+            "Runs a simulation, asks you to confirm the accounts it lists, then deletes only those once an administrator authenticates. Admins and excluded accounts are never deleted."
         }
     }
+
+    /// True for a run that changes the Mac. The helper requires an
+    /// administrator's authorization for it, deciding from the mode itself;
+    /// a simulation, which reads the saved settings and deletes nothing,
+    /// stays open to standard users.
+    public var requiresAdmin: Bool { self == .live }
 
     /// The tool arguments for a mode. A live run is limited to the confirmed
     /// accounts, each re-checked against the rules by the tool itself.
@@ -170,17 +180,23 @@ public enum UsersPreferenceKey: String, CaseIterable, Sendable {
 @objc public protocol HelperXPCProtocol: Sendable {
     /// Run manageusers in the named mode. For `live`, `accounts` is the list the
     /// user confirmed; it is ignored for `simulate`. Output streams back.
-    func run(mode: String, accounts: [String])
+    /// `authorization` is an AuthorizationExternalForm holding
+    /// `CleanupConstants.adminRight`, required for a mode whose
+    /// `requiresAdmin` is true and empty otherwise.
+    func run(mode: String, accounts: [String], authorization: Data)
 
     /// Stop the run in progress.
     func stop()
 
     /// Write a preference to /Library/Preferences/com.github.manageusers.plist.
-    func setBoolPreference(key: String, value: Bool, withReply reply: @escaping (Bool) -> Void)
-    func setIntPreference(key: String, value: Int, withReply reply: @escaping (Bool) -> Void)
-    func setStringPreference(key: String, value: String, withReply reply: @escaping (Bool) -> Void)
-    func setArrayPreference(key: String, value: [String], withReply reply: @escaping (Bool) -> Void)
-    func removePreference(key: String, withReply reply: @escaping (Bool) -> Void)
+    /// `authorization` is an AuthorizationExternalForm the GUI obtained from an
+    /// administrator; the helper refuses the write unless it holds
+    /// `CleanupConstants.adminRight`.
+    func setBoolPreference(key: String, value: Bool, authorization: Data, withReply reply: @escaping (Bool) -> Void)
+    func setIntPreference(key: String, value: Int, authorization: Data, withReply reply: @escaping (Bool) -> Void)
+    func setStringPreference(key: String, value: String, authorization: Data, withReply reply: @escaping (Bool) -> Void)
+    func setArrayPreference(key: String, value: [String], authorization: Data, withReply reply: @escaping (Bool) -> Void)
+    func removePreference(key: String, authorization: Data, withReply reply: @escaping (Bool) -> Void)
 
     /// The helper's version, to confirm it is alive.
     func getHelperVersion(withReply reply: @escaping (String) -> Void)
@@ -206,13 +222,13 @@ public extension NSXPCInterface {
         let classes = NSSet(array: [NSArray.self, NSString.self]) as! Set<AnyHashable>
         interface.setClasses(
             classes,
-            for: #selector(HelperXPCProtocol.setArrayPreference(key:value:withReply:)),
+            for: #selector(HelperXPCProtocol.setArrayPreference(key:value:authorization:withReply:)),
             argumentIndex: 1,
             ofReply: false
         )
         interface.setClasses(
             classes,
-            for: #selector(HelperXPCProtocol.run(mode:accounts:)),
+            for: #selector(HelperXPCProtocol.run(mode:accounts:authorization:)),
             argumentIndex: 1,
             ofReply: false
         )
