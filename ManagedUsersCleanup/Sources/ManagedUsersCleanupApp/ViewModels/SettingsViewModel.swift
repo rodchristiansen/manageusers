@@ -54,7 +54,8 @@ final class SettingsViewModel {
 
     var deletionDays = 0 { didSet { scheduleAutoSave() } }
     var strategy: StrategyChoice = .areaDefault { didSet { scheduleAutoSave() } }
-    var additionalExclusionsText = "" { didSet { scheduleAutoSave() } }
+    /// Accounts never deleted, edited as a list.
+    var additionalExclusions: [String] = [] { didSet { scheduleAutoSave() } }
     var deleteAdmins = false { didSet { scheduleAutoSave() } }
     var deletableAdminsText = "" { didSet { scheduleAutoSave() } }
 
@@ -92,6 +93,9 @@ final class SettingsViewModel {
             await self.save()
         }
     }
+
+    /// True when a profile forces at least one of manageusers' keys.
+    var hasManagedSettings: Bool { !managedKeys.isEmpty }
 
     func isManaged(_ key: UsersPreferenceKey) -> Bool {
         managedKeys.contains(key.rawValue)
@@ -146,7 +150,7 @@ final class SettingsViewModel {
     private func apply(_ snapshot: PreferenceSnapshot) {
         deletionDays = snapshot.deletionDays
         strategy = snapshot.strategy
-        additionalExclusionsText = snapshot.additionalExclusions.joined(separator: ", ")
+        additionalExclusions = snapshot.additionalExclusions
         deleteAdmins = snapshot.deleteAdmins
         deletableAdminsText = snapshot.deletableAdmins.joined(separator: ", ")
     }
@@ -155,10 +159,28 @@ final class SettingsViewModel {
         PreferenceSnapshot(
             deletionDays: max(0, deletionDays),
             strategy: strategy,
-            additionalExclusions: Self.parseNames(additionalExclusionsText),
+            additionalExclusions: additionalExclusions,
             deleteAdmins: deleteAdmins,
             deletableAdmins: Self.parseNames(deletableAdminsText)
         )
+    }
+
+    // MARK: - Exclusion List
+
+    /// Adds every name in `text` (commas and spaces separate several) that is
+    /// not already on the list, ignoring case. Returns the names added.
+    @discardableResult
+    func addExclusions(from text: String) -> [String] {
+        guard !isManaged(.additionalExclusions) else { return [] }
+        let existing = Set(additionalExclusions.map { $0.lowercased() })
+        let added = Self.parseNames(text).filter { !existing.contains($0.lowercased()) }
+        if !added.isEmpty { additionalExclusions += added }
+        return added
+    }
+
+    func removeExclusions(_ names: Set<String>) {
+        guard !isManaged(.additionalExclusions), !names.isEmpty else { return }
+        additionalExclusions.removeAll { names.contains($0) }
     }
 
     /// Splits a names field on commas and whitespace, keeping the first

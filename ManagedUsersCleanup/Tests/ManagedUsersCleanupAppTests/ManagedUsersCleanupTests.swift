@@ -153,6 +153,28 @@ private struct FakeSource: PreferenceSource {
         #expect(model.deleteAdmins)
     }
 
+    @Test func exclusionListAddsAndRemoves() {
+        let model = SettingsViewModel(source: FakeSource(values: ["AdditionalExclusions": ["kiosk"]]))
+        model.load()
+        #expect(!model.hasManagedSettings)
+        #expect(model.addExclusions(from: "Kiosk, support guest") == ["support", "guest"])
+        #expect(model.additionalExclusions == ["kiosk", "support", "guest"])
+        model.removeExclusions(["kiosk", "guest"])
+        #expect(model.additionalExclusions == ["support"])
+    }
+
+    @Test func managedExclusionListIsReadOnly() {
+        let model = SettingsViewModel(source: FakeSource(
+            values: ["AdditionalExclusions": ["kiosk"]],
+            managed: ["AdditionalExclusions"]
+        ))
+        model.load()
+        #expect(model.hasManagedSettings)
+        #expect(model.addExclusions(from: "support").isEmpty)
+        model.removeExclusions(["kiosk"])
+        #expect(model.additionalExclusions == ["kiosk"])
+    }
+
     @Test func writesSkipManagedKeysAndRemoveDefaults() {
         var old = PreferenceSnapshot()
         old.deletionDays = 30
